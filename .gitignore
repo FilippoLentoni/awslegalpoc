@@ -1,4 +1,26 @@
-# Ignore resources directory
-/resources/
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+
+# Env / secrets
 .env
-Instructions.md
+*.pem
+
+# Streamlit
+.streamlit/
+
+# Local resources
+/resources/
+
+# AgentCore runtime configs
+.bedrock_agentcore/
+.agentcore_build/
+
+# OS
+.DS_Store
+
+# CDK
+infra/cdk.out/
