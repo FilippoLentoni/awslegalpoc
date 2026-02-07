@@ -1,2 +1,4 @@
 # Ignore resources directory
 /resources/
+.env
+Instructions.md
