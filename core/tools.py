@@ -1,0 +1,194 @@
+import os
+
+import boto3
+from ddgs import DDGS
+from ddgs.exceptions import DDGSException, RatelimitException
+from strands.tools import tool
+from strands_tools import retrieve
+
+from core.config import BEDROCK_KB_ID
+
+
+@tool
+def get_return_policy(product_category: str) -> str:
+    """Get return policy information for a specific product category."""
+    return_policies = {
+        "smartphones": {
+            "window": "30 days",
+            "condition": "Original packaging, no physical damage, factory reset required",
+            "process": "Online RMA portal or technical support",
+            "refund_time": "5-7 business days after inspection",
+            "shipping": "Free return shipping, prepaid label provided",
+            "warranty": "1-year manufacturer warranty included",
+        },
+        "laptops": {
+            "window": "30 days",
+            "condition": "Original packaging, all accessories, no software modifications",
+            "process": "Technical support verification required before return",
+            "refund_time": "7-10 business days after inspection",
+            "shipping": "Free return shipping with original packaging",
+            "warranty": "1-year manufacturer warranty, extended options available",
+        },
+        "accessories": {
+            "window": "30 days",
+            "condition": "Unopened packaging preferred, all components included",
+            "process": "Online return portal",
+            "refund_time": "3-5 business days after receipt",
+            "shipping": "Customer pays return shipping under $50",
+            "warranty": "90-day manufacturer warranty",
+        },
+    }
+
+    default_policy = {
+        "window": "30 days",
+        "condition": "Original condition with all included components",
+        "process": "Contact technical support",
+        "refund_time": "5-7 business days after inspection",
+        "shipping": "Return shipping policies vary",
+        "warranty": "Standard manufacturer warranty applies",
+    }
+
+    policy = return_policies.get(product_category.lower(), default_policy)
+    return (
+        f"Return Policy - {product_category.title()}:\n\n"
+        f"• Return window: {policy['window']} from delivery\n"
+        f"• Condition: {policy['condition']}\n"
+        f"• Process: {policy['process']}\n"
+        f"• Refund timeline: {policy['refund_time']}\n"
+        f"• Shipping: {policy['shipping']}\n"
+        f"• Warranty: {policy['warranty']}"
+    )
+
+
+@tool
+def get_product_info(product_type: str) -> str:
+    """Get detailed technical specifications and information for electronics products."""
+    products = {
+        "laptops": {
+            "warranty": "1-year manufacturer warranty + optional extended coverage",
+            "specs": "Intel/AMD processors, 8-32GB RAM, SSD storage, various display sizes",
+            "features": "Backlit keyboards, USB-C/Thunderbolt, Wi-Fi 6, Bluetooth 5.0",
+            "compatibility": "Windows 11, macOS, Linux support varies by model",
+            "support": "Technical support and driver updates included",
+        },
+        "smartphones": {
+            "warranty": "1-year manufacturer warranty",
+            "specs": "5G/4G connectivity, 128GB-1TB storage, multiple camera systems",
+            "features": "Wireless charging, water resistance, biometric security",
+            "compatibility": "iOS/Android, carrier unlocked options available",
+            "support": "Software updates and technical support included",
+        },
+        "headphones": {
+            "warranty": "1-year manufacturer warranty",
+            "specs": "Wired/wireless options, noise cancellation, 20Hz-20kHz frequency",
+            "features": "Active noise cancellation, touch controls, voice assistant",
+            "compatibility": "Bluetooth 5.0+, 3.5mm jack, USB-C charging",
+            "support": "Firmware updates via companion app",
+        },
+        "monitors": {
+            "warranty": "3-year manufacturer warranty",
+            "specs": "4K/1440p/1080p resolutions, IPS/OLED panels, various sizes",
+            "features": "HDR support, high refresh rates, adjustable stands",
+            "compatibility": "HDMI, DisplayPort, USB-C inputs",
+            "support": "Color calibration and technical support",
+        },
+    }
+    product = products.get(product_type.lower())
+    if not product:
+        return (
+            f"Technical specifications for {product_type} not available. "
+            "Please contact our technical support team for detailed product information "
+            "and compatibility requirements."
+        )
+
+    return (
+        f"Technical Information - {product_type.title()}:\n\n"
+        f"• Warranty: {product['warranty']}\n"
+        f"• Specifications: {product['specs']}\n"
+        f"• Key Features: {product['features']}\n"
+        f"• Compatibility: {product['compatibility']}\n"
+        f"• Support: {product['support']}"
+    )
+
+
+@tool
+def web_search(keywords: str, region: str = "us-en", max_results: int = 5) -> str:
+    """Search the web for updated information using DuckDuckGo."""
+    try:
+        results = DDGS().text(keywords, region=region, max_results=max_results)
+        return results if results else "No results found."
+    except RatelimitException:
+        return "Rate limit reached. Please try again later."
+    except DDGSException as exc:
+        return f"Search error: {exc}"
+    except Exception as exc:
+        return f"Search error: {str(exc)}"
+
+
+def _resolve_kb_id() -> str:
+    if BEDROCK_KB_ID:
+        return BEDROCK_KB_ID
+
+    try:
+        ssm = boto3.client("ssm")
+        account_id = boto3.client("sts").get_caller_identity()["Account"]
+        region = boto3.session.Session().region_name
+        param_name = f"/{account_id}-{region}/kb/knowledge-base-id"
+        return ssm.get_parameter(Name=param_name)["Parameter"]["Value"]
+    except Exception:
+        return ""
+
+
+@tool
+def get_technical_support(issue_description: str) -> str:
+    """Retrieve technical support information from Bedrock Knowledge Base."""
+    try:
+        kb_id = _resolve_kb_id()
+        if not kb_id:
+            return (
+                "Knowledge base is not configured. Set BEDROCK_KB_ID in .env or "
+                "store /<account>-<region>/kb/knowledge-base-id in SSM."
+            )
+
+        region = boto3.session.Session().region_name
+
+        tool_use = {
+            "toolUseId": "tech_support_query",
+            "input": {
+                "text": issue_description,
+                "knowledgeBaseId": kb_id,
+                "region": region,
+                "numberOfResults": 3,
+                "score": 0.4,
+            },
+        }
+
+        result = retrieve.retrieve(tool_use)
+
+        if result.get("status") == "success":
+            return result["content"][0]["text"]
+        return (
+            "Unable to access technical support documentation. "
+            f"Error: {result.get('content', [{}])[0].get('text', 'Unknown error')}"
+        )
+
+    except Exception as exc:
+        return f"Unable to access technical support documentation. Error: {str(exc)}"
+
+
+SYSTEM_PROMPT = """You are a helpful and professional customer support assistant for an electronics e-commerce company.
+Your role is to:
+- Provide accurate information using the tools available to you
+- Support the customer with technical information and product specifications, and maintenance questions
+- Be friendly, patient, and understanding with customers
+- Always offer additional help after answering questions
+- If you can't help with something, direct customers to the appropriate contact
+
+You have access to the following tools:
+1. get_return_policy() - For warranty and return policy questions
+2. get_product_info() - To get information about a specific product
+3. web_search() - To access current technical documentation, or for updated information.
+4. get_technical_support() - For troubleshooting issues, setup guides, maintenance tips, and detailed technical assistance
+For any technical problems, setup questions, or maintenance concerns, always use the get_technical_support() tool as it contains our comprehensive technical documentation and step-by-step guides.
+
+Always use the appropriate tool to get accurate, up-to-date information rather than making assumptions about electronic products or specifications."""
