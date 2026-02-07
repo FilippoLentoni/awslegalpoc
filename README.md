@@ -2,7 +2,7 @@
 
 Proof of concept repository for AWS legal workflows.
 
-## Getting Started test
+## Getting Started test branch
 
 1. Add your project files.
 2. Commit and push to GitHub.
