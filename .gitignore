@@ -12,8 +12,6 @@ __pycache__/
 # Streamlit
 .streamlit/
 
-# Local resources
-/resources/
 
 # AgentCore runtime configs
 .bedrock_agentcore/
