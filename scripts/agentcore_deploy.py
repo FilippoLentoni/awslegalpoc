@@ -1,4 +1,5 @@
 import argparse
+import base64
 import json
 import os
 import shutil
@@ -387,15 +388,39 @@ def deploy_runtime(memory_id: str, cognito_config: Dict[str, str], wait: bool) -
             ]
         },
         memory_mode="STM_AND_LTM",
+        disable_otel=True,  # Disable AgentCore default observability to use Langfuse
     )
 
+    # Prepare Langfuse OTEL configuration if credentials are available
+    env_vars = {
+        "MEMORY_ID": memory_id,
+        "BEDROCK_REGION": os.getenv("BEDROCK_REGION", region),
+        "BEDROCK_MODEL_ID": os.getenv("BEDROCK_MODEL_ID", "amazon.nova-2-lite-v1:0"),
+        "BEDROCK_INFERENCE_PROFILE_ARN": os.getenv("BEDROCK_INFERENCE_PROFILE_ARN", ""),
+    }
+
+    # Add Langfuse observability configuration if credentials are provided
+    langfuse_secret_key = os.getenv("LANGFUSE_SECRET_KEY", "").strip('"')
+    langfuse_public_key = os.getenv("LANGFUSE_PUBLIC_KEY", "").strip('"')
+    langfuse_host = os.getenv("LANGFUSE_HOST", "https://us.cloud.langfuse.com").strip('"')
+
+    if langfuse_secret_key and langfuse_public_key:
+        # Create base64-encoded auth header for Langfuse OTEL endpoint
+        langfuse_auth_token = base64.b64encode(
+            f"{langfuse_public_key}:{langfuse_secret_key}".encode()
+        ).decode()
+
+        env_vars.update({
+            "OTEL_EXPORTER_OTLP_ENDPOINT": f"{langfuse_host}/api/public/otel",
+            "OTEL_EXPORTER_OTLP_HEADERS": f"Authorization=Basic {langfuse_auth_token}",
+            "DISABLE_ADOT_OBSERVABILITY": "true",
+        })
+        print(f"✅ Langfuse observability configured: {langfuse_host}")
+    else:
+        print("⚠️ Langfuse credentials not found - observability will not be enabled")
+
     launch_result = runtime.launch(
-        env_vars={
-            "MEMORY_ID": memory_id,
-            "BEDROCK_REGION": os.getenv("BEDROCK_REGION", region),
-            "BEDROCK_MODEL_ID": os.getenv("BEDROCK_MODEL_ID", "amazon.nova-2-lite-v1:0"),
-            "BEDROCK_INFERENCE_PROFILE_ARN": os.getenv("BEDROCK_INFERENCE_PROFILE_ARN", ""),
-        },
+        env_vars=env_vars,
         auto_update_on_conflict=True,
     )
 

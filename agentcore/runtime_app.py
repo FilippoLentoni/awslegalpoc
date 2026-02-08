@@ -14,6 +14,7 @@ from mcp.client.streamable_http import streamablehttp_client
 from strands import Agent
 from strands.models import BedrockModel
 from strands.tools.mcp import MCPClient
+from strands.telemetry import StrandsTelemetry
 
 # Ensure core is importable whether it's next to this file or in parent directory
 HERE = os.path.dirname(__file__)
@@ -48,6 +49,10 @@ gateway_client = boto3.client(
 )
 
 app = BedrockAgentCoreApp()
+
+# Initialize Strands telemetry for Langfuse observability
+strands_telemetry = StrandsTelemetry()
+strands_telemetry.setup_otlp_exporter()
 
 
 def _get_ssm_parameter(name: str) -> str:

@@ -10,14 +10,19 @@ import boto3
 import requests
 from bedrock_agentcore_starter_toolkit.services.runtime import get_data_plane_endpoint
 
-RUNTIME_ARN = os.getenv(
-    "AGENTCORE_RUNTIME_ARN",
-    "arn:aws:bedrock-agentcore:us-east-2:729665431827:runtime/awslegalpoc_customer_support-NmZatwFYo5",
-)
 REGION = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "us-east-2"
 COGNITO_SECRET_NAME = os.getenv("COGNITO_CONFIG_SECRET", "awslegalpoc/cognito-config")
 USERNAME = os.getenv("COGNITO_USERNAME", "admin")
 PASSWORD = os.getenv("COGNITO_PASSWORD", "ChangeMe123!")
+
+
+def _get_runtime_arn() -> str:
+    """Get runtime ARN from env var or SSM parameter"""
+    runtime_arn = os.getenv("AGENTCORE_RUNTIME_ARN")
+    if runtime_arn:
+        return runtime_arn
+    ssm = boto3.client("ssm", region_name=REGION)
+    return ssm.get_parameter(Name="/app/customersupport/agentcore/runtime_arn")["Parameter"]["Value"]
 
 
 def _secret_hash(username: str, client_id: str, client_secret: str) -> str:
@@ -26,6 +31,7 @@ def _secret_hash(username: str, client_id: str, client_secret: str) -> str:
     return base64.b64encode(hmac.new(key, message, digestmod=hashlib.sha256).digest()).decode()
 
 
+RUNTIME_ARN = _get_runtime_arn()
 sm = boto3.client("secretsmanager", region_name=REGION)
 secret = sm.get_secret_value(SecretId=COGNITO_SECRET_NAME)
 cfg = json.loads(secret["SecretString"])
