@@ -411,9 +411,14 @@ def deploy_runtime(memory_id: str, cognito_config: Dict[str, str], wait: bool) -
         ).decode()
 
         env_vars.update({
+            # OTEL tracing configuration
             "OTEL_EXPORTER_OTLP_ENDPOINT": f"{langfuse_host}/api/public/otel",
             "OTEL_EXPORTER_OTLP_HEADERS": f"Authorization=Basic {langfuse_auth_token}",
             "DISABLE_ADOT_OBSERVABILITY": "true",
+            # Langfuse SDK credentials (for Prompt Management)
+            "LANGFUSE_PUBLIC_KEY": langfuse_public_key,
+            "LANGFUSE_SECRET_KEY": langfuse_secret_key,
+            "LANGFUSE_HOST": langfuse_host,
         })
         print(f"✅ Langfuse observability configured: {langfuse_host}")
     else:

@@ -15,6 +15,7 @@ from strands import Agent
 from strands.models import BedrockModel
 from strands.tools.mcp import MCPClient
 from strands.telemetry import StrandsTelemetry
+from opentelemetry import trace as otel_trace
 
 # Ensure core is importable whether it's next to this file or in parent directory
 HERE = os.path.dirname(__file__)
@@ -29,8 +30,8 @@ for root in candidate_roots:
         break
 
 from core.config import BEDROCK_INFERENCE_PROFILE_ARN, BEDROCK_MODEL_ID, BEDROCK_REGION
+from core.langfuse_client import get_system_prompt
 from core.tools import (
-    SYSTEM_PROMPT,
     get_product_info,
     get_return_policy,
     get_technical_support,
@@ -90,6 +91,13 @@ async def invoke(payload, context=None):
     if not memory_id:
         return "Error: MEMORY_ID env var is required"
 
+    # Set Langfuse metadata on the current OTEL span so the trace
+    # can be queried by session_id and user_id in the Langfuse dashboard
+    current_span = otel_trace.get_current_span()
+    if current_span and current_span.is_recording():
+        current_span.set_attribute("langfuse.session.id", str(session_id))
+        current_span.set_attribute("langfuse.user.id", actor_id)
+
     model = BedrockModel(
         model_id=MODEL_ID,
         temperature=0.3,
@@ -127,7 +135,7 @@ async def invoke(payload, context=None):
         agent = Agent(
             model=model,
             tools=tools,
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=get_system_prompt(),
             session_manager=AgentCoreMemorySessionManager(memory_config, RUNTIME_REGION),
         )
 

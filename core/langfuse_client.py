@@ -2,6 +2,8 @@ from typing import Optional
 
 from core.config import LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY
 
+LANGFUSE_PROMPT_NAME = "customer-support-agent"
+
 
 def get_langfuse_client():
     if not (LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY):
@@ -20,3 +22,18 @@ def get_langfuse_client():
         )
     except Exception:
         return None
+
+
+def get_system_prompt() -> str:
+    """Fetch system prompt from Langfuse Prompt Management, fall back to hardcoded."""
+    from core.tools import SYSTEM_PROMPT
+
+    lf = get_langfuse_client()
+    if not lf:
+        return SYSTEM_PROMPT
+
+    try:
+        prompt = lf.get_prompt(LANGFUSE_PROMPT_NAME, type="text", fallback=SYSTEM_PROMPT)
+        return prompt.compile()
+    except Exception:
+        return SYSTEM_PROMPT

@@ -17,9 +17,9 @@ from core.config import (
     BEDROCK_REGION,
     MEMORY_ID,
 )
+from core.langfuse_client import get_system_prompt
 from core.observability import configure_langfuse_otel
 from core.tools import (
-    SYSTEM_PROMPT,
     get_product_info,
     get_return_policy,
     get_technical_support,
@@ -67,7 +67,7 @@ def create_agent(session_id: str, actor_id: str):
     return Agent(
         model=model,
         tools=tools,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=get_system_prompt(),
         session_manager=session_manager,
     )
 

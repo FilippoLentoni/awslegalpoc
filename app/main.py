@@ -1,4 +1,6 @@
+import time
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import streamlit as st
 
@@ -29,6 +31,10 @@ if "last_trace_id" not in st.session_state:
     st.session_state.last_trace_id = None
 if "last_generation_id" not in st.session_state:
     st.session_state.last_generation_id = None
+if "last_prompt" not in st.session_state:
+    st.session_state.last_prompt = None
+if "last_request_time" not in st.session_state:
+    st.session_state.last_request_time = None
 
 st.title("AWS Legal POC - Customer Support Assistant")
 
@@ -66,11 +72,73 @@ for msg in st.session_state.messages:
         st.markdown(msg["content"])
 
 
+def _find_runtime_trace(prompt: str, request_time: datetime, max_retries: int = 6) -> str:
+    """
+    Find the AgentCore Runtime OTEL trace that matches the given prompt.
+
+    Queries recent traces and matches by input text. Retries with increasing
+    delays since OTEL traces take time to be indexed in Langfuse.
+    """
+    lf = get_langfuse_client()
+    if not lf:
+        return None
+
+    # Use a generous time window: 5 minutes before request_time (or None to skip filter)
+    from_ts = None
+    if request_time:
+        from_ts = request_time - timedelta(minutes=5)
+
+    for attempt in range(max_retries):
+        try:
+            kwargs = {"limit": 10}
+            if from_ts:
+                kwargs["from_timestamp"] = from_ts
+
+            response = lf.api.trace.list(**kwargs)
+
+            if response and response.data:
+                # First try to match by prompt text in trace input
+                if prompt:
+                    for trace in response.data:
+                        trace_input = str(trace.input) if trace.input else ""
+                        if prompt in trace_input:
+                            return trace.id
+
+                # Fallback: return the most recent trace
+                return response.data[0].id
+
+        except Exception as e:
+            print(f"[feedback] Error querying traces (attempt {attempt + 1}): {e}", flush=True)
+
+        # Increasing delay: 2, 3, 4, 5, 6, 7 seconds
+        if attempt < max_retries - 1:
+            time.sleep(2 + attempt)
+
+    return None
+
+
 def _log_langfuse(prompt: str, response: str):
+    """
+    Log interaction to Langfuse.
+
+    When AgentCore is enabled, the runtime already creates traces via OTEL,
+    so we skip creating duplicate traces here. We just store a marker that
+    a trace exists for this session.
+
+    When AgentCore is disabled (local agent mode), we create traces manually.
+    """
     lf = get_langfuse_client()
     if not lf:
         return
 
+    if AGENTCORE_ENABLED:
+        # Runtime already traced via OTEL - don't create duplicate
+        # Mark that we should look up the trace later for feedback
+        st.session_state.last_trace_id = "LOOKUP_REQUIRED"
+        st.session_state.last_generation_id = None
+        return
+
+    # Local agent mode - create trace manually
     try:
         trace = lf.trace(
             name="chat_session",
@@ -94,25 +162,59 @@ def _log_langfuse(prompt: str, response: str):
 
 
 def _send_feedback(value: int):
+    """
+    Send user feedback (thumbs up/down) to Langfuse.
+
+    Links the feedback to the correct trace:
+    - For AgentCore mode: queries Langfuse to find the runtime trace by session_id
+    - For local agent mode: uses the stored trace_id
+    """
     lf = get_langfuse_client()
-    if not lf or not st.session_state.last_trace_id:
+    if not lf:
+        return
+
+    # Determine which trace to link the feedback to
+    trace_id = None
+
+    if st.session_state.last_trace_id == "LOOKUP_REQUIRED":
+        # AgentCore mode - find the runtime trace by prompt + timestamp
+        prompt = st.session_state.get("last_prompt")
+        req_time = st.session_state.get("last_request_time")
+        print(f"[feedback] Looking up trace: prompt={prompt!r}, request_time={req_time}", flush=True)
+
+        with st.spinner("Submitting feedback..."):
+            trace_id = _find_runtime_trace(prompt, req_time)
+
+        print(f"[feedback] Found trace_id={trace_id}", flush=True)
+        if not trace_id:
+            st.warning("Could not link feedback to trace. Please try again.")
+            return
+    else:
+        # Local agent mode - use stored trace_id
+        trace_id = st.session_state.last_trace_id
+
+    if not trace_id:
+        st.warning("No trace available for feedback.")
         return
 
     try:
-        lf.score(
-            trace_id=st.session_state.last_trace_id,
+        lf.create_score(
+            trace_id=trace_id,
             name="thumbs_feedback",
-            value=value,
+            value=float(value),
             comment="User feedback from Streamlit UI",
         )
-    except Exception:
-        pass
+    except Exception as e:
+        st.error(f"Failed to submit feedback: {e}")
 
 
 if prompt := st.chat_input("Ask a question..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
+
+    st.session_state.last_prompt = prompt
+    st.session_state.last_request_time = datetime.now(timezone.utc)
 
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
