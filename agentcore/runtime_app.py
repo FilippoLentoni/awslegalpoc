@@ -40,7 +40,8 @@ from core.tools import (
 
 RUNTIME_REGION = os.getenv("AWS_REGION") or boto3.session.Session().region_name
 MODEL_REGION = BEDROCK_REGION or RUNTIME_REGION
-MODEL_ID = BEDROCK_INFERENCE_PROFILE_ARN or BEDROCK_MODEL_ID
+# Use inference profile instead of direct model ID for on-demand throughput
+MODEL_ID = BEDROCK_INFERENCE_PROFILE_ARN or "us.amazon.nova-2-lite-v1:0"
 
 ssm = boto3.client("ssm", region_name=RUNTIME_REGION)
 
