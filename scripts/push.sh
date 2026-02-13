@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_NAME="awslegalpoc-streamlit"
+# Support environment-specific repository names
+REPO_NAME="${REPO_NAME:-awslegalpoc-streamlit}"
 AWS_REGION="${AWS_REGION:-$(aws configure get region)}"
 
 if [[ -z "${AWS_REGION}" ]]; then

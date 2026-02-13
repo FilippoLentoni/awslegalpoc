@@ -1,6 +1,6 @@
 import os
 
-from aws_cdk import CfnOutput, Duration, RemovalPolicy, Stack, SecretValue
+from aws_cdk import CfnOutput, Duration, RemovalPolicy, Stack, SecretValue, Tags
 from aws_cdk import aws_certificatemanager as acm
 from aws_cdk import aws_cognito as cognito
 from aws_cdk import aws_ec2 as ec2
@@ -14,7 +14,15 @@ from constructs import Construct
 
 
 class AwsLegalPocAppStack(Stack):
-    def __init__(self, scope: Construct, construct_id: str, repo: ecr.IRepository, **kwargs) -> None:
+    def __init__(
+        self,
+        scope: Construct,
+        construct_id: str,
+        repo: ecr.IRepository,
+        env_name: str,
+        config: dict,
+        **kwargs
+    ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
         acm_cert_arn = os.getenv("ACM_CERT_ARN")
@@ -24,16 +32,15 @@ class AwsLegalPocAppStack(Stack):
 
         cognito_domain_prefix = os.getenv("COGNITO_DOMAIN_PREFIX")
         if not cognito_domain_prefix:
-            # Default to a deterministic prefix; must be globally unique
-            cognito_domain_prefix = f"awslegalpoc-{Stack.of(self).account}"
+            # Default to environment-aware prefix
+            cognito_domain_prefix = f"{config['stackPrefix']}-{Stack.of(self).account}"
 
-        langfuse_host = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
-        bedrock_region = os.getenv("BEDROCK_REGION", Stack.of(self).region)
-        bedrock_model_id = os.getenv(
-            "BEDROCK_MODEL_ID", "amazon.nova-2-lite-v1:0"
-        )
-        bedrock_inference_profile_arn = os.getenv("BEDROCK_INFERENCE_PROFILE_ARN")
-        app_version = os.getenv("APP_VERSION", "dev")
+        # Use config values with environment variable fallback
+        langfuse_host = os.getenv("LANGFUSE_HOST", config.get("langfuseHost", "https://cloud.langfuse.com"))
+        bedrock_region = os.getenv("BEDROCK_REGION", config.get("region", Stack.of(self).region))
+        bedrock_model_id = os.getenv("BEDROCK_MODEL_ID", config.get("bedrockModelId", "amazon.nova-2-lite-v1:0"))
+        bedrock_inference_profile_arn = os.getenv("BEDROCK_INFERENCE_PROFILE_ARN", config.get("bedrockInferenceProfile"))
+        app_version = os.getenv("APP_VERSION", env_name)
 
         vpc = ec2.Vpc(
             self,
@@ -87,7 +94,7 @@ class AwsLegalPocAppStack(Stack):
         langfuse_secret = secretsmanager.Secret(
             self,
             "LangfuseKeys",
-            secret_name="awslegalpoc/langfuse",
+            secret_name=f"{config['stackPrefix']}/langfuse",
             secret_string_value=SecretValue.unsafe_plain_text(
                 '{\"public_key\":\"CHANGEME\",\"secret_key\":\"CHANGEME\"}'
             ),
@@ -96,7 +103,7 @@ class AwsLegalPocAppStack(Stack):
         container = task_def.add_container(
             "StreamlitContainer",
             image=ecs.ContainerImage.from_ecr_repository(repo, tag="latest"),
-            logging=ecs.LogDrivers.aws_logs(stream_prefix="awslegalpoc", log_group=log_group),
+            logging=ecs.LogDrivers.aws_logs(stream_prefix=config['stackPrefix'], log_group=log_group),
             environment={
                 "AWS_REGION": Stack.of(self).region,
                 "BEDROCK_REGION": bedrock_region,
@@ -104,7 +111,7 @@ class AwsLegalPocAppStack(Stack):
                 "BEDROCK_INFERENCE_PROFILE_ARN": bedrock_inference_profile_arn or "",
                 "LANGFUSE_HOST": langfuse_host,
                 "COGNITO_ENABLED": "true",
-                "COGNITO_CONFIG_SECRET": "awslegalpoc/cognito-config",
+                "COGNITO_CONFIG_SECRET": f"{config['stackPrefix']}/cognito-config",
                 "APP_VERSION": app_version,
             },
             secrets={
@@ -228,10 +235,14 @@ class AwsLegalPocAppStack(Stack):
             scale_out_cooldown=Duration.seconds(60),
         )
 
-        CfnOutput(self, "AlbHttpsUrl", value=f"https://{alb.load_balancer_dns_name}")
+        CfnOutput(self, "AlbUrl", value=f"http://{alb.load_balancer_dns_name}")
         if enable_alb_cognito and acm_cert_arn:
             CfnOutput(self, "CognitoUserPoolId", value=user_pool.user_pool_id)
             CfnOutput(self, "CognitoClientId", value=user_pool_client.user_pool_client_id)
             CfnOutput(self, "CognitoDomain", value=user_pool_domain.domain_name)
         CfnOutput(self, "EcsServiceName", value=service.service_name)
         CfnOutput(self, "EcrRepoUri", value=repo.repository_uri)
+
+        # Apply tags from config
+        for key, value in config.get("tags", {}).items():
+            Tags.of(self).add(key, value)

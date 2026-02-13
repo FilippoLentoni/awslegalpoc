@@ -1,8 +1,10 @@
+import os
 from typing import Optional
 
 from core.config import LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY
 
-LANGFUSE_PROMPT_NAME = "customer-support-agent"
+_env = os.getenv("APP_VERSION", "local")
+LANGFUSE_PROMPT_NAME = f"customer-support-agent-{_env}"
 
 
 def get_langfuse_client():

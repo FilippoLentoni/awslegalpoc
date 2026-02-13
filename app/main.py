@@ -21,6 +21,15 @@ from core.langfuse_client import get_langfuse_client
 
 st.set_page_config(page_title="AWS Legal POC")
 
+st.markdown(
+    """
+    <style>
+    .stApp { background-color: #1a1a1a; color: #ffffff; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
 if "actor_id" not in st.session_state:
@@ -36,7 +45,10 @@ if "last_prompt" not in st.session_state:
 if "last_request_time" not in st.session_state:
     st.session_state.last_request_time = None
 
+_app_version = __import__("os").getenv("APP_VERSION", "local")
 st.title("AWS Legal POC - Customer Support Assistant")
+if _app_version != "prod":
+    st.caption(f":orange[Environment: {_app_version}]")
 
 # Temporary in-app Cognito authentication (no ALB)
 if COGNITO_ENABLED and "auth_token" not in st.session_state:

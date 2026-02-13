@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE_NAME="awslegalpoc-streamlit"
+IMAGE_NAME="${REPO_NAME:-awslegalpoc-streamlit}"
 
 DOCKER_CMD="${DOCKER_CMD:-docker}"
 if ! ${DOCKER_CMD} info >/dev/null 2>&1; then

@@ -1,4 +1,4 @@
-from aws_cdk import Duration, RemovalPolicy, Stack
+from aws_cdk import Duration, RemovalPolicy, Stack, Tags
 from aws_cdk import aws_dynamodb as dynamodb
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
@@ -7,7 +7,14 @@ from constructs import Construct
 
 
 class AwsLegalPocAgentCoreStack(Stack):
-    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+    def __init__(
+        self,
+        scope: Construct,
+        construct_id: str,
+        env_name: str,
+        config: dict,
+        **kwargs
+    ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
         warranty_table = dynamodb.Table(
@@ -111,3 +118,7 @@ class AwsLegalPocAgentCoreStack(Stack):
             parameter_name="/app/customersupport/agentcore/lambda_arn",
             string_value=lambda_fn.function_arn,
         )
+
+        # Apply tags from config
+        for key, value in config.get("tags", {}).items():
+            Tags.of(self).add(key, value)

@@ -1,0 +1,32 @@
+{
+  "beta": {
+    "account": "958502869858",
+    "region": "us-east-2",
+    "stackPrefix": "beta-awslegalpoc",
+    "ecrRepository": "beta-awslegalpoc-streamlit",
+    "cognitoUsername": "admin",
+    "langfuseHost": "https://us.cloud.langfuse.com",
+    "bedrockModelId": "amazon.nova-2-lite-v1:0",
+    "bedrockInferenceProfile": "us.amazon.nova-2-lite-v1:0",
+    "tags": {
+      "Environment": "beta",
+      "Project": "awslegalpoc",
+      "ManagedBy": "deployment-script"
+    }
+  },
+  "prod": {
+    "account": "878817878019",
+    "region": "us-east-2",
+    "stackPrefix": "awslegalpoc",
+    "ecrRepository": "awslegalpoc-streamlit",
+    "cognitoUsername": "admin",
+    "langfuseHost": "https://us.cloud.langfuse.com",
+    "bedrockModelId": "amazon.nova-2-lite-v1:0",
+    "bedrockInferenceProfile": "us.amazon.nova-2-lite-v1:0",
+    "tags": {
+      "Environment": "prod",
+      "Project": "awslegalpoc",
+      "ManagedBy": "deployment-script"
+    }
+  }
+}

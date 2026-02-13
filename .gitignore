@@ -22,3 +22,4 @@ __pycache__/
 
 # CDK
 infra/cdk.out/
+config/secrets.json

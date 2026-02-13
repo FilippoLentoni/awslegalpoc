@@ -146,6 +146,21 @@ def ensure_gateway(cognito_config: Dict[str, str]) -> Dict[str, str]:
                 "gateway_arn": match["gatewayArn"],
             }
 
+        # Update existing gateway auth config to match current Cognito settings
+        try:
+            role_arn = get_ssm_parameter("/app/customersupport/agentcore/gateway_iam_role")
+            gateway_client.update_gateway(
+                gatewayIdentifier=gateway["id"],
+                name=gateway["name"],
+                roleArn=role_arn,
+                protocolType="MCP",
+                authorizerType="CUSTOM_JWT",
+                authorizerConfiguration=auth_config,
+            )
+            print(f"Updated gateway auth config for: {gateway['id']}")
+        except Exception as e:
+            print(f"Warning: Could not update gateway auth config: {e}")
+
     put_ssm_parameter("/app/customersupport/agentcore/gateway_id", gateway["id"])
     put_ssm_parameter("/app/customersupport/agentcore/gateway_name", gateway["name"])
     put_ssm_parameter("/app/customersupport/agentcore/gateway_arn", gateway["gateway_arn"])
@@ -397,6 +412,7 @@ def deploy_runtime(memory_id: str, cognito_config: Dict[str, str], wait: bool) -
         "BEDROCK_REGION": os.getenv("BEDROCK_REGION", region),
         "BEDROCK_MODEL_ID": os.getenv("BEDROCK_MODEL_ID", "amazon.nova-2-lite-v1:0"),
         "BEDROCK_INFERENCE_PROFILE_ARN": os.getenv("BEDROCK_INFERENCE_PROFILE_ARN", ""),
+        "APP_VERSION": os.getenv("APP_VERSION", "local"),
     }
 
     # Add Langfuse observability configuration if credentials are provided

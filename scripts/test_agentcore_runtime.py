@@ -108,7 +108,10 @@ def main() -> None:
         signal.alarm(0)
 
     print("Session ID:", session_id)
-    print("Response:\n", response.get("response", ""))
+    if isinstance(response, str):
+        print("Response:\n", response)
+    else:
+        print("Response:\n", response.get("response", response))
 
 
 if __name__ == "__main__":
