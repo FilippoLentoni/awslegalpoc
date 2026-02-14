@@ -25,6 +25,11 @@ class AwsLegalPocKnowledgeBaseStack(Stack):
         chunk_max_tokens = kb_config.get("chunkMaxTokens", 512)
         chunk_overlap_percent = kb_config.get("chunkOverlapPercent", 20)
 
+        # Allow overriding vector bucket name via config (S3 Vectors names are globally unique)
+        vector_bucket_name = kb_config.get(
+            "vectorBucketName", f"{stack_prefix}-kb-vectors"
+        )
+
         # 1. S3 data bucket for uploading documents
         data_bucket = s3.Bucket(
             self,
@@ -39,14 +44,14 @@ class AwsLegalPocKnowledgeBaseStack(Stack):
         vector_bucket = s3vectors.CfnVectorBucket(
             self,
             "KBVectorBucket",
-            vector_bucket_name=f"{stack_prefix}-kb-vectors",
+            vector_bucket_name=vector_bucket_name,
         )
 
         # 3. Vector index inside the vector bucket
         vector_index = s3vectors.CfnIndex(
             self,
             "KBVectorIndex",
-            vector_bucket_name=f"{stack_prefix}-kb-vectors",
+            vector_bucket_name=vector_bucket_name,
             index_name=f"{stack_prefix}-kb-index",
             dimension=dimension,
             distance_metric="cosine",
@@ -147,24 +152,27 @@ class AwsLegalPocKnowledgeBaseStack(Stack):
         )
 
         # 7. SSM parameters for runtime to read
+        # Use /app/ prefix to avoid reserved SSM namespaces in some accounts
+        ssm_prefix = f"/app/{stack_prefix}/kb"
+
         ssm.StringParameter(
             self,
             "KBIdParam",
-            parameter_name=f"/{stack_prefix}/kb/knowledge-base-id",
+            parameter_name=f"{ssm_prefix}/knowledge-base-id",
             string_value=kb.attr_knowledge_base_id,
         )
 
         ssm.StringParameter(
             self,
             "KBDataSourceIdParam",
-            parameter_name=f"/{stack_prefix}/kb/data-source-id",
+            parameter_name=f"{ssm_prefix}/data-source-id",
             string_value=data_source.attr_data_source_id,
         )
 
         ssm.StringParameter(
             self,
             "KBDataBucketParam",
-            parameter_name=f"/{stack_prefix}/kb/data-bucket-name",
+            parameter_name=f"{ssm_prefix}/data-bucket-name",
             string_value=data_bucket.bucket_name,
         )
 

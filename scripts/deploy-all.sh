@@ -318,8 +318,9 @@ if [[ "${SKIP_AGENTCORE}" == "false" ]]; then
     export APP_VERSION="${ENV}"
 
     # Read Knowledge Base ID from SSM (set by KnowledgeBaseStack)
+    # Uses /app/ prefix to avoid reserved SSM namespaces
     KNOWLEDGE_BASE_ID=$(aws ssm get-parameter \
-        --name "/${STACK_PREFIX}/kb/knowledge-base-id" \
+        --name "/app/${STACK_PREFIX}/kb/knowledge-base-id" \
         --region "${REGION}" \
         --query "Parameter.Value" \
         --output text 2>/dev/null || echo "")

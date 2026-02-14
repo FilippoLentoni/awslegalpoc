@@ -33,7 +33,8 @@
       "embeddingModel": "amazon.titan-embed-text-v2:0",
       "dimension": 1024,
       "chunkMaxTokens": 512,
-      "chunkOverlapPercent": 20
+      "chunkOverlapPercent": 20,
+      "vectorBucketName": "878817878019-awslegalpoc-kb-vectors"
     },
     "tags": {
       "Environment": "prod",
