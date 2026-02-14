@@ -10,6 +10,7 @@ from aws_cdk import aws_elasticloadbalancingv2 as elbv2
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_logs as logs
 from aws_cdk import aws_secretsmanager as secretsmanager
+from aws_cdk import aws_ssm as ssm
 from constructs import Construct
 
 
@@ -42,6 +43,19 @@ class AwsLegalPocAppStack(Stack):
         bedrock_inference_profile_arn = os.getenv("BEDROCK_INFERENCE_PROFILE_ARN", config.get("bedrockInferenceProfile"))
         app_version = os.getenv("APP_VERSION", env_name)
 
+        # KB config from SSM (set by KnowledgeBaseStack)
+        stack_prefix = config["stackPrefix"]
+        ssm_prefix = f"/app/{stack_prefix}/kb"
+        kb_id = ssm.StringParameter.value_for_string_parameter(
+            self, f"{ssm_prefix}/knowledge-base-id"
+        )
+        kb_data_bucket = ssm.StringParameter.value_for_string_parameter(
+            self, f"{ssm_prefix}/data-bucket-name"
+        )
+        kb_data_source_id = ssm.StringParameter.value_for_string_parameter(
+            self, f"{ssm_prefix}/data-source-id"
+        )
+
         vpc = ec2.Vpc(
             self,
             "Vpc",
@@ -73,6 +87,20 @@ class AwsLegalPocAppStack(Stack):
                     "ssm:GetParameter",
                 ],
                 resources=["*"],
+            )
+        )
+
+        # S3 permissions for KB document management from the UI
+        task_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["s3:ListBucket"],
+                resources=[f"arn:aws:s3:::{stack_prefix}-kb-data"],
+            )
+        )
+        task_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+                resources=[f"arn:aws:s3:::{stack_prefix}-kb-data/*"],
             )
         )
 
@@ -113,6 +141,9 @@ class AwsLegalPocAppStack(Stack):
                 "COGNITO_ENABLED": "true",
                 "COGNITO_CONFIG_SECRET": f"{config['stackPrefix']}/cognito-config",
                 "APP_VERSION": app_version,
+                "KNOWLEDGE_BASE_ID": kb_id,
+                "KB_DATA_BUCKET_NAME": kb_data_bucket,
+                "KB_DATA_SOURCE_ID": kb_data_source_id,
             },
             secrets={
                 "LANGFUSE_PUBLIC_KEY": ecs.Secret.from_secrets_manager(

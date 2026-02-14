@@ -12,9 +12,12 @@ from core.cognito_auth import (
 )
 from core.config import (
     AGENTCORE_ENABLED,
+    BEDROCK_KB_ID,
     COGNITO_ENABLED,
     COGNITO_PASSWORD,
     COGNITO_USERNAME,
+    KB_DATA_BUCKET_NAME,
+    KB_DATA_SOURCE_ID,
 )
 from core.langfuse_client import get_langfuse_client
 
@@ -77,6 +80,75 @@ if COGNITO_ENABLED and "auth_token" not in st.session_state:
             st.stop()
 
     st.stop()
+
+
+# ---------------------------------------------------------------------------
+# Sidebar: Knowledge Base Document Management
+# ---------------------------------------------------------------------------
+if KB_DATA_BUCKET_NAME and BEDROCK_KB_ID and KB_DATA_SOURCE_ID and _app_version != "prod":
+    import boto3
+
+    _s3 = boto3.client("s3")
+    _bedrock_agent = boto3.client("bedrock-agent")
+
+    with st.sidebar:
+        st.header("Knowledge Base")
+
+        # --- Upload ---
+        uploaded_files = st.file_uploader(
+            "Upload documents",
+            accept_multiple_files=True,
+            type=["pdf", "txt", "docx", "csv", "md"],
+        )
+        if uploaded_files and st.button("Upload to KB"):
+            for f in uploaded_files:
+                try:
+                    _s3.upload_fileobj(f, KB_DATA_BUCKET_NAME, f.name)
+                    st.success(f"Uploaded {f.name}")
+                except Exception as e:
+                    st.error(f"Failed to upload {f.name}: {e}")
+
+        st.divider()
+
+        # --- List & Delete ---
+        st.subheader("Documents")
+        try:
+            resp = _s3.list_objects_v2(Bucket=KB_DATA_BUCKET_NAME)
+            objects = resp.get("Contents", [])
+        except Exception as e:
+            objects = []
+            st.error(f"Failed to list documents: {e}")
+
+        if objects:
+            doc_keys = [obj["Key"] for obj in objects]
+            selected = st.multiselect("Select documents to delete", doc_keys)
+            if selected and st.button("Delete selected"):
+                try:
+                    _s3.delete_objects(
+                        Bucket=KB_DATA_BUCKET_NAME,
+                        Delete={"Objects": [{"Key": k} for k in selected]},
+                    )
+                    st.success(f"Deleted {len(selected)} document(s)")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Delete failed: {e}")
+        else:
+            st.info("No documents in the knowledge base.")
+
+        st.divider()
+
+        # --- Sync / Ingest ---
+        if st.button("Sync Knowledge Base"):
+            try:
+                job = _bedrock_agent.start_ingestion_job(
+                    knowledgeBaseId=BEDROCK_KB_ID,
+                    dataSourceId=KB_DATA_SOURCE_ID,
+                )
+                status = job["ingestionJob"]["status"]
+                st.success(f"Ingestion job started (status: {status})")
+            except Exception as e:
+                st.error(f"Sync failed: {e}")
+
 
 # Display chat history
 for msg in st.session_state.messages:
