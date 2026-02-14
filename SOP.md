@@ -1,5 +1,18 @@
 # Agent Builder SOP: Langfuse Onboarding & Continuous Improvement
 
+# New Dev
+
+1) ci/cd automatic testing
+2) rag with real data
+3) nova to claude
+4) prompt can be control from beta and prompt
+5) upload of the documents and control
+6) metrics calculation
+7) LLM as a judge
+8) from streamlit ot react
+9) thumbs up/down
+10) llm as a judge offline and online
+
 ## Table of Contents
 
 1. [Onboarding a New Agent](#1-onboarding-a-new-agent)

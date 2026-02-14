@@ -19,12 +19,7 @@ from core.config import (
 )
 from core.langfuse_client import get_system_prompt
 from core.observability import configure_langfuse_otel
-from core.tools import (
-    get_product_info,
-    get_return_policy,
-    get_technical_support,
-    web_search,
-)
+from core.tools import search_knowledge_base
 
 
 def create_agent(session_id: str, actor_id: str):
@@ -39,12 +34,7 @@ def create_agent(session_id: str, actor_id: str):
         region_name=BEDROCK_REGION,
     )
 
-    tools = [
-        get_product_info,
-        get_return_policy,
-        web_search,
-        get_technical_support,
-    ]
+    tools = [search_knowledge_base]
 
     if MEMORY_ID:
         memory_config = AgentCoreMemoryConfig(

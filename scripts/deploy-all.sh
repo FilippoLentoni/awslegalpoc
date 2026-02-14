@@ -234,6 +234,12 @@ if [[ "${SKIP_CDK}" == "false" ]]; then
         --require-approval never
     log_success "AgentCore Backend Stack deployed"
 
+    log_info "Deploying Knowledge Base Stack..."
+    cdk deploy "${STACK_PREFIX}-KnowledgeBaseStack" \
+        --context env="${ENV}" \
+        --require-approval never
+    log_success "Knowledge Base Stack deployed"
+
     cd "${PROJECT_ROOT}"
 else
     log_info "Skipping CDK deployment (--skip-cdk)"
@@ -310,6 +316,19 @@ if [[ "${SKIP_AGENTCORE}" == "false" ]]; then
 
     export COGNITO_CONFIG_SECRET="${STACK_PREFIX}/cognito-config"
     export APP_VERSION="${ENV}"
+
+    # Read Knowledge Base ID from SSM (set by KnowledgeBaseStack)
+    KNOWLEDGE_BASE_ID=$(aws ssm get-parameter \
+        --name "/${STACK_PREFIX}/kb/knowledge-base-id" \
+        --region "${REGION}" \
+        --query "Parameter.Value" \
+        --output text 2>/dev/null || echo "")
+    if [[ -n "${KNOWLEDGE_BASE_ID}" ]]; then
+        export KNOWLEDGE_BASE_ID
+        log_info "Knowledge Base ID: ${KNOWLEDGE_BASE_ID}"
+    else
+        log_warn "Knowledge Base ID not found in SSM — KB search will be disabled"
+    fi
 
     log_info "Deploying AgentCore runtime, gateway, and memory..."
     python3.11 -m poetry run python "${PROJECT_ROOT}/scripts/agentcore_deploy.py" --cognito-secret "${STACK_PREFIX}/cognito-config" --wait

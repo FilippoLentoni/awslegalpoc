@@ -8,6 +8,12 @@
     "langfuseHost": "https://us.cloud.langfuse.com",
     "bedrockModelId": "amazon.nova-2-lite-v1:0",
     "bedrockInferenceProfile": "us.amazon.nova-2-lite-v1:0",
+    "knowledgeBase": {
+      "embeddingModel": "amazon.titan-embed-text-v2:0",
+      "dimension": 1024,
+      "chunkMaxTokens": 512,
+      "chunkOverlapPercent": 20
+    },
     "tags": {
       "Environment": "beta",
       "Project": "awslegalpoc",
@@ -23,6 +29,12 @@
     "langfuseHost": "https://us.cloud.langfuse.com",
     "bedrockModelId": "amazon.nova-2-lite-v1:0",
     "bedrockInferenceProfile": "us.amazon.nova-2-lite-v1:0",
+    "knowledgeBase": {
+      "embeddingModel": "amazon.titan-embed-text-v2:0",
+      "dimension": 1024,
+      "chunkMaxTokens": 512,
+      "chunkOverlapPercent": 20
+    },
     "tags": {
       "Environment": "prod",
       "Project": "awslegalpoc",

@@ -8,6 +8,7 @@ import aws_cdk as cdk
 from ecr_stack import AwsLegalPocEcrStack
 from app_stack import AwsLegalPocAppStack
 from agentcore_stack import AwsLegalPocAgentCoreStack
+from knowledge_base_stack import AwsLegalPocKnowledgeBaseStack
 
 
 # Load environment configuration
@@ -54,6 +55,14 @@ AwsLegalPocAppStack(
 AwsLegalPocAgentCoreStack(
     app,
     f"{stack_prefix}-AgentCoreStack",
+    env=cdk.Environment(account=account, region=region),
+    env_name=env_name,
+    config=config,
+)
+
+AwsLegalPocKnowledgeBaseStack(
+    app,
+    f"{stack_prefix}-KnowledgeBaseStack",
     env=cdk.Environment(account=account, region=region),
     env_name=env_name,
     config=config,

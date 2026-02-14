@@ -169,42 +169,6 @@ def ensure_gateway(cognito_config: Dict[str, str]) -> Dict[str, str]:
     return gateway
 
 
-def ensure_gateway_target(gateway_id: str) -> None:
-    gateway_client = boto3.client("bedrock-agentcore-control", region_name=_region())
-
-    existing = gateway_client.list_gateway_targets(gatewayIdentifier=gateway_id).get(
-        "items", []
-    )
-    if any(item.get("name") == "LambdaUsingSDK" for item in existing):
-        return
-
-    api_spec_path = os.path.join(
-        os.path.dirname(__file__), "..", "agentcore", "lambda", "api_spec.json"
-    )
-    with open(api_spec_path, "r", encoding="utf-8") as handle:
-        api_spec = json.load(handle)
-
-    lambda_target_config = {
-        "mcp": {
-            "lambda": {
-                "lambdaArn": get_ssm_parameter(
-                    "/app/customersupport/agentcore/lambda_arn"
-                ),
-                "toolSchema": {"inlinePayload": api_spec},
-            }
-        }
-    }
-
-    credential_config = [{"credentialProviderType": "GATEWAY_IAM_ROLE"}]
-
-    gateway_client.create_gateway_target(
-        gatewayIdentifier=gateway_id,
-        name="LambdaUsingSDK",
-        description="Lambda Target using SDK",
-        targetConfiguration=lambda_target_config,
-        credentialProviderConfigurations=credential_config,
-    )
-
 
 def create_agentcore_runtime_execution_role() -> str:
     iam = boto3.client("iam")
@@ -413,6 +377,7 @@ def deploy_runtime(memory_id: str, cognito_config: Dict[str, str], wait: bool) -
         "BEDROCK_MODEL_ID": os.getenv("BEDROCK_MODEL_ID", "amazon.nova-2-lite-v1:0"),
         "BEDROCK_INFERENCE_PROFILE_ARN": os.getenv("BEDROCK_INFERENCE_PROFILE_ARN", ""),
         "APP_VERSION": os.getenv("APP_VERSION", "local"),
+        "KNOWLEDGE_BASE_ID": os.getenv("KNOWLEDGE_BASE_ID", ""),
     }
 
     # Add Langfuse observability configuration if credentials are provided
@@ -480,7 +445,6 @@ def main() -> None:
     cognito_config = ensure_cognito_params(args.cognito_secret)
     memory_id = ensure_memory()
     gateway = ensure_gateway(cognito_config)
-    ensure_gateway_target(gateway["id"])
     runtime_arn = deploy_runtime(memory_id, cognito_config, wait=args.wait)
 
     print("\n✅ AgentCore deployment complete")

@@ -1,195 +1,103 @@
+import logging
 import os
 
 import boto3
-from ddgs import DDGS
-from ddgs.exceptions import DDGSException, RatelimitException
 from strands.tools import tool
-from strands_tools import retrieve
 
-from core.config import BEDROCK_KB_ID
+from core.config import BEDROCK_KB_ID, BEDROCK_REGION
+
+logger = logging.getLogger(__name__)
+
+_bedrock_agent_runtime_client = None
 
 
-@tool
-def get_return_policy(product_category: str) -> str:
-    """Get return policy information for a specific product category."""
-    return_policies = {
-        "smartphones": {
-            "window": "30 days",
-            "condition": "Original packaging, no physical damage, factory reset required",
-            "process": "Online RMA portal or technical support",
-            "refund_time": "5-7 business days after inspection",
-            "shipping": "Free return shipping, prepaid label provided",
-            "warranty": "1-year manufacturer warranty included",
-        },
-        "laptops": {
-            "window": "30 days",
-            "condition": "Original packaging, all accessories, no software modifications",
-            "process": "Technical support verification required before return",
-            "refund_time": "7-10 business days after inspection",
-            "shipping": "Free return shipping with original packaging",
-            "warranty": "1-year manufacturer warranty, extended options available",
-        },
-        "accessories": {
-            "window": "30 days",
-            "condition": "Unopened packaging preferred, all components included",
-            "process": "Online return portal",
-            "refund_time": "3-5 business days after receipt",
-            "shipping": "Customer pays return shipping under $50",
-            "warranty": "90-day manufacturer warranty",
-        },
-    }
-
-    default_policy = {
-        "window": "30 days",
-        "condition": "Original condition with all included components",
-        "process": "Contact technical support",
-        "refund_time": "5-7 business days after inspection",
-        "shipping": "Return shipping policies vary",
-        "warranty": "Standard manufacturer warranty applies",
-    }
-
-    policy = return_policies.get(product_category.lower(), default_policy)
-    return (
-        f"Return Policy - {product_category.title()}:\n\n"
-        f"• Return window: {policy['window']} from delivery\n"
-        f"• Condition: {policy['condition']}\n"
-        f"• Process: {policy['process']}\n"
-        f"• Refund timeline: {policy['refund_time']}\n"
-        f"• Shipping: {policy['shipping']}\n"
-        f"• Warranty: {policy['warranty']}"
-    )
+def _get_client():
+    global _bedrock_agent_runtime_client
+    if _bedrock_agent_runtime_client is None:
+        region = BEDROCK_REGION or os.getenv("AWS_REGION", "us-east-2")
+        _bedrock_agent_runtime_client = boto3.client(
+            "bedrock-agent-runtime", region_name=region
+        )
+    return _bedrock_agent_runtime_client
 
 
 @tool
-def get_product_info(product_type: str) -> str:
-    """Get detailed technical specifications and information for electronics products."""
-    products = {
-        "laptops": {
-            "warranty": "1-year manufacturer warranty + optional extended coverage",
-            "specs": "Intel/AMD processors, 8-32GB RAM, SSD storage, various display sizes",
-            "features": "Backlit keyboards, USB-C/Thunderbolt, Wi-Fi 6, Bluetooth 5.0",
-            "compatibility": "Windows 11, macOS, Linux support varies by model",
-            "support": "Technical support and driver updates included",
-        },
-        "smartphones": {
-            "warranty": "1-year manufacturer warranty",
-            "specs": "5G/4G connectivity, 128GB-1TB storage, multiple camera systems",
-            "features": "Wireless charging, water resistance, biometric security",
-            "compatibility": "iOS/Android, carrier unlocked options available",
-            "support": "Software updates and technical support included",
-        },
-        "headphones": {
-            "warranty": "1-year manufacturer warranty",
-            "specs": "Wired/wireless options, noise cancellation, 20Hz-20kHz frequency",
-            "features": "Active noise cancellation, touch controls, voice assistant",
-            "compatibility": "Bluetooth 5.0+, 3.5mm jack, USB-C charging",
-            "support": "Firmware updates via companion app",
-        },
-        "monitors": {
-            "warranty": "3-year manufacturer warranty",
-            "specs": "4K/1440p/1080p resolutions, IPS/OLED panels, various sizes",
-            "features": "HDR support, high refresh rates, adjustable stands",
-            "compatibility": "HDMI, DisplayPort, USB-C inputs",
-            "support": "Color calibration and technical support",
-        },
-    }
-    product = products.get(product_type.lower())
-    if not product:
+def search_knowledge_base(query: str, max_results: int = 5) -> str:
+    """Search the knowledge base for relevant information about products,
+    return policies, technical support, troubleshooting, and any other
+    customer support topics.
+
+    Use this tool whenever the customer asks a question that may be
+    answered by our documentation, product information, return policies,
+    or technical guides.
+
+    Args:
+        query: The search query to find relevant documents
+        max_results: Maximum number of results to return (default: 5)
+
+    Returns:
+        A formatted string containing the search results with source citations
+    """
+    knowledge_base_id = os.environ.get("KNOWLEDGE_BASE_ID") or BEDROCK_KB_ID
+
+    if not knowledge_base_id:
         return (
-            f"Technical specifications for {product_type} not available. "
-            "Please contact our technical support team for detailed product information "
-            "and compatibility requirements."
+            "Knowledge base search is not available. "
+            "The KNOWLEDGE_BASE_ID environment variable is not set."
         )
 
-    return (
-        f"Technical Information - {product_type.title()}:\n\n"
-        f"• Warranty: {product['warranty']}\n"
-        f"• Specifications: {product['specs']}\n"
-        f"• Key Features: {product['features']}\n"
-        f"• Compatibility: {product['compatibility']}\n"
-        f"• Support: {product['support']}"
-    )
-
-
-@tool
-def web_search(keywords: str, region: str = "us-en", max_results: int = 5) -> str:
-    """Search the web for updated information using DuckDuckGo."""
-    try:
-        results = DDGS().text(keywords, region=region, max_results=max_results)
-        return results if results else "No results found."
-    except RatelimitException:
-        return "Rate limit reached. Please try again later."
-    except DDGSException as exc:
-        return f"Search error: {exc}"
-    except Exception as exc:
-        return f"Search error: {str(exc)}"
-
-
-def _resolve_kb_id() -> str:
-    if BEDROCK_KB_ID:
-        return BEDROCK_KB_ID
+    client = _get_client()
 
     try:
-        ssm = boto3.client("ssm")
-        account_id = boto3.client("sts").get_caller_identity()["Account"]
-        region = boto3.session.Session().region_name
-        param_name = f"/{account_id}-{region}/kb/knowledge-base-id"
-        return ssm.get_parameter(Name=param_name)["Parameter"]["Value"]
-    except Exception:
-        return ""
-
-
-@tool
-def get_technical_support(issue_description: str) -> str:
-    """Retrieve technical support information from Bedrock Knowledge Base."""
-    try:
-        kb_id = _resolve_kb_id()
-        if not kb_id:
-            return (
-                "Knowledge base is not configured. Set BEDROCK_KB_ID in .env or "
-                "store /<account>-<region>/kb/knowledge-base-id in SSM."
-            )
-
-        region = boto3.session.Session().region_name
-
-        tool_use = {
-            "toolUseId": "tech_support_query",
-            "input": {
-                "text": issue_description,
-                "knowledgeBaseId": kb_id,
-                "region": region,
-                "numberOfResults": 3,
-                "score": 0.4,
+        response = client.retrieve(
+            knowledgeBaseId=knowledge_base_id,
+            retrievalQuery={"text": query},
+            retrievalConfiguration={
+                "vectorSearchConfiguration": {"numberOfResults": max_results}
             },
-        }
-
-        result = retrieve.retrieve(tool_use)
-
-        if result.get("status") == "success":
-            return result["content"][0]["text"]
-        return (
-            "Unable to access technical support documentation. "
-            f"Error: {result.get('content', [{}])[0].get('text', 'Unknown error')}"
         )
 
-    except Exception as exc:
-        return f"Unable to access technical support documentation. Error: {str(exc)}"
+        results = response.get("retrievalResults", [])
+
+        if not results:
+            return f"No results found for query: {query}"
+
+        formatted_results = []
+        for i, result in enumerate(results, 1):
+            content = result.get("content", {}).get("text", "No content")
+            score = result.get("score", 0)
+            location = result.get("location", {})
+            source_type = location.get("type", "UNKNOWN")
+
+            if source_type == "S3":
+                source = location.get("s3Location", {}).get("uri", "Unknown")
+            else:
+                source = f"Source type: {source_type}"
+
+            text = f"Result {i} (Relevance: {score:.2f})\n"
+            text += f"Source: {source}\n"
+            if len(content) > 800:
+                content = content[:800] + "..."
+            text += f"Content: {content}\n"
+            formatted_results.append(text)
+
+        return "\n---\n".join(formatted_results)
+
+    except Exception as e:
+        logger.error(f"Error searching knowledge base: {e}")
+        return f"Error searching knowledge base: {str(e)}"
 
 
-SYSTEM_PROMPT = """You are a helpful and professional customer support assistant for an electronics e-commerce company.
-You MUST speak like a friendly pirate in ALL your responses (use "Ahoy!", "matey", "Arrr", "ye", "treasure" etc.) while still being helpful and accurate.
+SYSTEM_PROMPT = """You are a helpful and professional customer support assistant.
+
 Your role is to:
-- Provide accurate information using the tools available to you
-- Support the customer with technical information and product specifications, and maintenance questions
+- Provide accurate information by searching the knowledge base
+- Support the customer with product information, return policies, technical support, and troubleshooting
 - Be friendly, patient, and understanding with customers
 - Always offer additional help after answering questions
 - If you can't help with something, direct customers to the appropriate contact
 
-You have access to the following tools:
-1. get_return_policy() - For warranty and return policy questions
-2. get_product_info() - To get information about a specific product
-3. web_search() - To access current technical documentation, or for updated information.
-4. get_technical_support() - For troubleshooting issues, setup guides, maintenance tips, and detailed technical assistance
-For any technical problems, setup questions, or maintenance concerns, always use the get_technical_support() tool as it contains our comprehensive technical documentation and step-by-step guides.
+You have access to:
+1. search_knowledge_base() - Search our comprehensive documentation for product info, return policies, technical guides, troubleshooting steps, and more.
 
-Always use the appropriate tool to get accurate, up-to-date information rather than making assumptions about electronic products or specifications."""
+Always use the search_knowledge_base tool to find accurate, up-to-date information rather than making assumptions. If the knowledge base does not contain relevant results, let the customer know and suggest contacting support directly."""
