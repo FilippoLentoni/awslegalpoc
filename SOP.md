@@ -2,16 +2,20 @@
 
 # New Dev
 
-1) ci/cd automatic testing
-2) rag with real data
-3) nova to claude
-4) prompt can be control from beta and prompt
-5) upload of the documents and control
-6) metrics calculation
-7) LLM as a judge
+4) prompt can be control from beta [ok] and prompt
+5) upload of the documents and control [ok]
+
+10) llm as a judge offline and online [1]
+1) ci/cd automatic testing [2]
+3) nova to claude [3]
+2) rag with real data [4] 
+6) metrics calculation [5]
+
 8) from streamlit ot react
 9) thumbs up/down
-10) llm as a judge offline and online
+
+
+
 
 ## Table of Contents
 
@@ -643,72 +647,95 @@ Code Change / New Prompt Version
           +-- avg_accuracy < 0.7  --> FAIL --> Block & Review
 ```
 
-### 7.3 CI Evaluation Script
+### 7.3 CI Evaluation Script: `scripts/run_eval.py`
 
-See `scripts/run_ci_evaluation.py` (create from template):
+The evaluation script is already implemented and wired into `deploy-all.sh` Step 7 (beta only).
 
-```python
-"""Run evaluation dataset and fail CI if accuracy is below threshold."""
-import argparse
-import sys
-import os
+**How it works:**
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-from langfuse import Evaluation
-from core.langfuse_client import get_langfuse_client
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--min-accuracy", type=float, default=0.7)
-    parser.add_argument("--dataset", default="customer-support-eval-global")
-    args = parser.parse_args()
-
-    langfuse = get_langfuse_client()
-    if not langfuse:
-        print("ERROR: Langfuse not configured")
-        sys.exit(1)
-
-    from core.agent import run_agent
-
-    def task(*, item, **kwargs):
-        return run_agent(item["input"])
-
-    def evaluator(*, input, output, expected_output, **kwargs):
-        if expected_output and any(
-            kw.lower() in output.lower()
-            for kw in expected_output.split() if len(kw) > 4
-        ):
-            return Evaluation(name="accuracy", value=1.0)
-        return Evaluation(name="accuracy", value=0.0)
-
-    def run_evaluator(*, item_results, **kwargs):
-        scores = [e.value for r in item_results for e in r.evaluations if e.name == "accuracy"]
-        avg = sum(scores) / len(scores) if scores else 0
-        return Evaluation(name="avg_accuracy", value=avg, comment=f"Average: {avg:.2%}")
-
-    dataset = langfuse.get_dataset(args.dataset)
-    result = dataset.run_experiment(
-        name=f"ci-{os.getenv('GITHUB_SHA', 'local')[:8]}",
-        task=task,
-        evaluators=[evaluator],
-        run_evaluators=[run_evaluator],
-    )
-
-    print(result.format())
-
-    avg_accuracy = next(
-        (e.value for e in result.run_evaluations if e.name == "avg_accuracy"), 0
-    )
-    if avg_accuracy < args.min_accuracy:
-        print(f"\nFAILED: Average accuracy {avg_accuracy:.2%} < threshold {args.min_accuracy:.2%}")
-        sys.exit(1)
-    else:
-        print(f"\nPASSED: Average accuracy {avg_accuracy:.2%} >= threshold {args.min_accuracy:.2%}")
-
-if __name__ == "__main__":
-    main()
 ```
+deploy-all.sh Step 7 (beta only)
+  └─ scripts/run_eval.py
+       ├─ Authenticate via Cognito
+       ├─ Fetch Langfuse dataset "customer-support-eval"
+       ├─ For each item:
+       │    ├─ Invoke AgentCore runtime (HTTPS + JWT)
+       │    ├─ Call Bedrock LLM judge (Correctness prompt)
+       │    └─ Record score to Langfuse trace
+       ├─ Print summary (pass/fail per item)
+       └─ Exit 0 (pass) or 1 (fail)
+```
+
+**Run manually:**
+
+```bash
+set -a && source .env && set +a
+python3.11 scripts/run_eval.py --dataset customer-support-eval --min-score 0.7
+```
+
+**CLI arguments:**
+
+| Arg | Default | Description |
+|-----|---------|-------------|
+| `--dataset` | `customer-support-eval` | Langfuse dataset name |
+| `--min-score` | `0.7` | Pass threshold (0.0-1.0) |
+| `--timeout` | `120` | Seconds per agent invocation |
+| `--run-name` | auto (timestamp) | Langfuse run name |
+
+**Pass/fail logic:** Exit 0 if average score >= threshold AND no item below 0.3.
+
+### 7.4 Online Hallucination Evaluator (Production)
+
+The Hallucination evaluator runs automatically on prod traces via Langfuse auto-eval. No code needed — configured entirely in the Langfuse UI.
+
+**Go to:** Langfuse > Evaluators > New Evaluator
+
+| Setting | Value |
+|---------|-------|
+| Type | LLM-as-a-Judge |
+| Name | `hallucination` |
+| Target | Live Traces (filter by `APP_VERSION=prod`) |
+| Sampling | 100% (adjust for cost) |
+| LLM Connection | `aws-bedrock` / `us.amazon.nova-2-lite-v1:0` |
+| Score type | Numeric (0.0 - 1.0, where 1.0 = hallucination detected) |
+| Score name | `hallucination` |
+
+**Evaluation prompt:**
+
+```
+Evaluate the degree of hallucination in the generation on a continuous
+scale from 0 to 1. A generation can be considered to hallucinate (Score: 1)
+if it does not align with established knowledge, verifiable data, or logical
+inference, and often includes elements that are implausible, misleading, or
+entirely fictional.
+
+Query: {{query}}
+Generation: {{generation}}
+
+Think step by step.
+```
+
+**Variable mapping:**
+
+| Variable | Maps to |
+|----------|---------|
+| `{{query}}` | `trace.input` |
+| `{{generation}}` | `trace.output` |
+
+**Monitoring:**
+
+- Filter Langfuse Scores tab by `hallucination > 0.5` to find problematic responses
+- Track average hallucination score over time in dashboards
+- Set up Langfuse alerts/webhooks for score degradation
+
+### 7.5 Evaluation Architecture Summary
+
+| Mode | Evaluator | Trigger | Ground Truth | Score Name |
+|------|-----------|---------|--------------|------------|
+| **Offline (CI/CD)** | Correctness | `deploy-all.sh` Step 7 on beta | Yes (Langfuse dataset) | `correctness` |
+| **Online (Live)** | Hallucination | Langfuse auto-eval on prod traces | No | `hallucination` |
+| **Online (Live)** | Quality | Langfuse auto-eval (Section 2.1) | No | `quality` |
+| **Manual** | Human annotation | Weekly review (Section 4) | Yes (human) | `correctness`, `helpfulness` |
 
 ---
 
@@ -944,8 +971,7 @@ scripts/
   seed_langfuse_prompt.py     # One-time: seed system prompt to Langfuse
   seed_langfuse_dataset.py    # One-time: seed eval dataset
   agentcore_deploy.py         # Deploy AgentCore runtime
-  run_tool_experiment.py      # Run SDK-based experiment (create per need)
-  run_ci_evaluation.py        # CI/CD evaluation gate (create per need)
+  run_eval.py                 # CI/CD LLM-as-judge evaluation (beta deployments)
 
 core/
   langfuse_client.py          # get_langfuse_client(), get_system_prompt()

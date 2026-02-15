@@ -338,14 +338,39 @@ else
     log_info "Skipping AgentCore deployment (--skip-agentcore)"
 fi
 
-# Step 7: Run Post-Deployment Tests
+# Step 7: Run Post-Deployment Tests (LLM-as-judge eval on beta only)
 if [[ "${SKIP_TESTS}" == "false" ]]; then
     log_step "Step 7: Running Post-Deployment Tests"
 
-    log_info "Running health checks..."
-    # TODO: Implement smoke tests
-    # python3 "${PROJECT_ROOT}/scripts/smoke_tests.py" --env "${ENV}"
-    log_warn "Smoke tests not yet implemented"
+    if [[ "${ENV}" == "beta" ]]; then
+        log_info "Running LLM-as-judge evaluation against beta..."
+
+        # Ensure Langfuse credentials are exported
+        if [[ -f "${SECRETS_FILE}" ]]; then
+            export LANGFUSE_PUBLIC_KEY=$(python3 -c "import json; print(json.load(open('${SECRETS_FILE}'))['${ENV}']['langfuse']['publicKey'])" 2>/dev/null || echo "")
+            export LANGFUSE_SECRET_KEY=$(python3 -c "import json; print(json.load(open('${SECRETS_FILE}'))['${ENV}']['langfuse']['secretKey'])" 2>/dev/null || echo "")
+        fi
+        export LANGFUSE_HOST=$(python3 -c "import json; print(json.load(open('${CONFIG_FILE}'))['${ENV}']['langfuseHost'])" 2>/dev/null || echo "https://us.cloud.langfuse.com")
+        export COGNITO_CONFIG_SECRET="${STACK_PREFIX}/cognito-config"
+        export DEPLOY_ENV="${ENV}"
+
+        # Wait for runtime to stabilize after deployment
+        log_info "Waiting 30 seconds for runtime to stabilize..."
+        sleep 30
+
+        if python3.11 -m poetry run python "${PROJECT_ROOT}/scripts/run_eval.py" \
+            --dataset "customer-support-eval" \
+            --min-score 0.7 \
+            --timeout 120; then
+            log_success "Evaluation passed!"
+        else
+            log_warn "Evaluation FAILED. Check Langfuse for details."
+            log_warn "Deployment completed but evaluation did not pass threshold."
+            # Note: does not exit 1 — change to 'exit 1' to gate deployments on eval
+        fi
+    else
+        log_info "Skipping evaluation for ${ENV} environment (eval runs on beta only)"
+    fi
 else
     log_info "Skipping post-deployment tests (--skip-tests)"
 fi
