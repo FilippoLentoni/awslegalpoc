@@ -6,8 +6,8 @@
     "ecrRepository": "beta-awslegalpoc-streamlit",
     "cognitoUsername": "admin",
     "langfuseHost": "https://us.cloud.langfuse.com",
-    "bedrockModelId": "amazon.nova-2-lite-v1:0",
-    "bedrockInferenceProfile": "us.amazon.nova-2-lite-v1:0",
+    "bedrockModelId": "anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "bedrockInferenceProfile": "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
     "knowledgeBase": {
       "embeddingModel": "amazon.titan-embed-text-v2:0",
       "dimension": 1024,
@@ -27,8 +27,8 @@
     "ecrRepository": "awslegalpoc-streamlit",
     "cognitoUsername": "admin",
     "langfuseHost": "https://us.cloud.langfuse.com",
-    "bedrockModelId": "amazon.nova-2-lite-v1:0",
-    "bedrockInferenceProfile": "us.amazon.nova-2-lite-v1:0",
+    "bedrockModelId": "anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "bedrockInferenceProfile": "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
     "knowledgeBase": {
       "embeddingModel": "amazon.titan-embed-text-v2:0",
       "dimension": 1024,

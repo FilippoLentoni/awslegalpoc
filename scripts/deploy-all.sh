@@ -317,6 +317,13 @@ if [[ "${SKIP_AGENTCORE}" == "false" ]]; then
     export COGNITO_CONFIG_SECRET="${STACK_PREFIX}/cognito-config"
     export APP_VERSION="${ENV}"
 
+    # Read model config from environments.json
+    export BEDROCK_MODEL_ID=$(python3 -c "import json; print(json.load(open('${CONFIG_FILE}'))['${ENV}']['bedrockModelId'])" 2>/dev/null || echo "")
+    export BEDROCK_INFERENCE_PROFILE_ARN=$(python3 -c "import json; print(json.load(open('${CONFIG_FILE}'))['${ENV}']['bedrockInferenceProfile'])" 2>/dev/null || echo "")
+    if [[ -n "${BEDROCK_INFERENCE_PROFILE_ARN}" ]]; then
+        log_info "Model: ${BEDROCK_INFERENCE_PROFILE_ARN}"
+    fi
+
     # Read Knowledge Base ID from SSM (set by KnowledgeBaseStack)
     # Uses /app/ prefix to avoid reserved SSM namespaces
     KNOWLEDGE_BASE_ID=$(aws ssm get-parameter \
