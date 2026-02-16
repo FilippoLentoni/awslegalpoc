@@ -5,11 +5,11 @@
 4) prompt can be control from beta [ok] and prompt
 5) upload of the documents and control [ok]
 
-10) llm as a judge offline and online [1]
-1) ci/cd automatic testing [2]
+10) llm as a judge offline [ok] and online [missing]
+1) ci/cd automatic testing [ok]
 3) nova to claude [3]
 2) rag with real data [4] 
-6) metrics calculation [5]
+6) metrics calculation and feedback loop [missing]
 
 8) from streamlit ot react
 9) thumbs up/down

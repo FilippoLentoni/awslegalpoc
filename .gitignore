@@ -23,3 +23,6 @@ __pycache__/
 # CDK
 infra/cdk.out/
 config/secrets.json
+
+# Eval results
+eval-results-*.csv

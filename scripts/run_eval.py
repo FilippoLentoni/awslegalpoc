@@ -15,6 +15,7 @@ Usage:
 """
 
 import argparse
+import csv
 import json
 import os
 import sys
@@ -145,6 +146,7 @@ def main():
     parser.add_argument("--min-score", type=float, default=0.7)
     parser.add_argument("--timeout", type=int, default=120)
     parser.add_argument("--run-name", default=None)
+    parser.add_argument("--export", default=None, help="Export results to CSV file path")
     args = parser.parse_args()
 
     # 1. Initialize clients
@@ -189,6 +191,7 @@ def main():
         # Invoke agent inside item.run() so the trace is linked to the dataset
         try:
             with item.run(run_name=run_name) as span:
+                span.update(input={"input": query})
                 session_id = str(uuid.uuid4())
                 print(f"  Invoking agent...")
                 generation = _invoke_runtime(
@@ -241,6 +244,18 @@ def main():
     print(f"Average score: {avg_score:.2f}")
     print(f"Passing: {passing}/{len(scores)} (threshold: {args.min_score})")
     print(f"Langfuse run: {run_name}")
+
+    # Export to CSV if requested
+    export_path = args.export or f"eval-results-{run_name}.csv"
+    with open(export_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["query", "score", "result", "reasoning"])
+        for query, score, reasoning in results:
+            status = "PASS" if score >= args.min_score else "FAIL"
+            writer.writerow([query, f"{score:.2f}", status, reasoning])
+        writer.writerow([])
+        writer.writerow(["SUMMARY", f"{avg_score:.2f}", f"{passing}/{len(scores)} passing", run_name])
+    print(f"Results exported to: {export_path}")
 
     if avg_score >= args.min_score and failing == 0:
         print("\nRESULT: PASSED")
