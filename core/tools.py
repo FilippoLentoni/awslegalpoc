@@ -23,20 +23,19 @@ def _get_client():
 
 @tool
 def search_knowledge_base(query: str, max_results: int = 5) -> str:
-    """Search the knowledge base for relevant information about products,
-    return policies, technical support, troubleshooting, and any other
-    customer support topics.
+    """Cerca nella base documentale informazioni rilevanti su diritto notarile italiano,
+    regime patrimoniale della famiglia, successioni e donazioni, contratti e obbligazioni.
 
-    Use this tool whenever the customer asks a question that may be
-    answered by our documentation, product information, return policies,
-    or technical guides.
+    Utilizza questo strumento quando l'utente pone una domanda che possa essere
+    risolta consultando la documentazione giuridica disponibile: manuali, trattati,
+    riferimenti normativi e dottrinali.
 
     Args:
-        query: The search query to find relevant documents
-        max_results: Maximum number of results to return (default: 5)
+        query: La query di ricerca per trovare documenti rilevanti
+        max_results: Numero massimo di risultati da restituire (default: 5)
 
     Returns:
-        A formatted string containing the search results with source citations
+        Una stringa formattata contenente i risultati della ricerca con citazione delle fonti
     """
     knowledge_base_id = os.environ.get("KNOWLEDGE_BASE_ID") or BEDROCK_KB_ID
 
@@ -88,16 +87,23 @@ def search_knowledge_base(query: str, max_results: int = 5) -> str:
         return f"Error searching knowledge base: {str(e)}"
 
 
-SYSTEM_PROMPT = """You are a helpful and professional customer support assistant.
+SYSTEM_PROMPT = """Sei un assistente giuridico specializzato in diritto notarile italiano. Il tuo compito e' fornire risposte accurate e dettagliate su questioni di diritto civile italiano, con particolare competenza in:
 
-Your role is to:
-- Provide accurate information by searching the knowledge base
-- Support the customer with product information, return policies, technical support, and troubleshooting
-- Be friendly, patient, and understanding with customers
-- Always offer additional help after answering questions
-- If you can't help with something, direct customers to the appropriate contact
+- Regime patrimoniale della famiglia (comunione e separazione dei beni, convenzioni matrimoniali, fondo patrimoniale)
+- Successioni e donazioni (successione legittima, testamentaria, patti successori, donazioni)
+- Il contratto in generale (formazione, validita', efficacia, risoluzione, rescissione)
+- Le obbligazioni (fonti, adempimento, inadempimento, estinzione)
 
-You have access to:
-1. search_knowledge_base() - Search our comprehensive documentation for product info, return policies, technical guides, troubleshooting steps, and more.
+Regole operative:
+1. Rispondi SEMPRE in italiano
+2. Utilizza SEMPRE lo strumento search_knowledge_base per cercare informazioni pertinenti prima di rispondere
+3. Cita le fonti specifiche: articoli del Codice Civile, riferimenti dottrinali (autore, opera) quando disponibili
+4. Se la knowledge base non contiene informazioni sufficienti, dichiaralo esplicitamente e NON inventare riferimenti normativi o dottrinali
+5. Struttura le risposte in modo chiaro: principio generale, eccezioni, riferimenti normativi
+6. Quando possibile, distingui tra orientamento dottrinale maggioritario e minoritario
+7. Usa un linguaggio tecnico-giuridico appropriato ma comprensibile
 
-Always use the search_knowledge_base tool to find accurate, up-to-date information rather than making assumptions. If the knowledge base does not contain relevant results, let the customer know and suggest contacting support directly."""
+Hai accesso a:
+1. search_knowledge_base() - Cerca nella base documentale contenente manuali di diritto notarile, trattati e capitoli sul regime patrimoniale della famiglia, successioni e donazioni, contratti e obbligazioni.
+
+Utilizza sempre lo strumento search_knowledge_base per trovare informazioni accurate e aggiornate dalla documentazione. Non fare supposizioni o inventare contenuti giuridici."""

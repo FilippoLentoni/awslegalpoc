@@ -365,10 +365,15 @@ if [[ "${SKIP_TESTS}" == "false" ]]; then
         log_info "Waiting 30 seconds for runtime to stabilize..."
         sleep 30
 
+        EVAL_DATASET=$(python3 -c "import json; print(json.load(open('${CONFIG_FILE}'))['${ENV}'].get('eval', {}).get('dataset', 'italian-legal-eval'))")
+        EVAL_MIN_SCORE=$(python3 -c "import json; print(json.load(open('${CONFIG_FILE}'))['${ENV}'].get('eval', {}).get('minScore', 0.5))")
+        EVAL_TIMEOUT=$(python3 -c "import json; print(json.load(open('${CONFIG_FILE}'))['${ENV}'].get('eval', {}).get('timeout', 180))")
+        log_info "Eval config: dataset=${EVAL_DATASET}, minScore=${EVAL_MIN_SCORE}, timeout=${EVAL_TIMEOUT}"
+
         if python3.11 -m poetry run python "${PROJECT_ROOT}/scripts/run_eval.py" \
-            --dataset "customer-support-eval" \
-            --min-score 0.7 \
-            --timeout 120; then
+            --dataset "${EVAL_DATASET}" \
+            --min-score "${EVAL_MIN_SCORE}" \
+            --timeout "${EVAL_TIMEOUT}"; then
             log_success "Evaluation passed!"
         else
             log_warn "Evaluation FAILED. Check Langfuse for details."

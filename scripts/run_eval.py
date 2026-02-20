@@ -41,20 +41,31 @@ from core.config import (
 from core.langfuse_client import get_langfuse_client
 
 JUDGE_PROMPT_TEMPLATE = """\
-You are an expert evaluator for a customer support AI assistant.
+You are an expert evaluator for an Italian notarial law AI assistant.
+You must evaluate the quality of the assistant's response by comparing it
+against the expected output (ground truth written by legal experts).
 
-Compare the assistant's actual output against the expected output.
+Evaluation criteria:
+- Legal accuracy: Are the cited articles, doctrinal references, and legal principles correct?
+- Completeness: Does the response cover the key points from the expected output?
+- Source citation: Does the response cite relevant normative sources or doctrinal references?
+- No hallucination: Does the response avoid inventing legal provisions or doctrinal positions?
+
 Score on a scale of 0.0 to 1.0:
-- 1.0 = Output fully aligns with expected output (covers same points, correct info)
-- 0.7 = Mostly aligned, minor differences that don't affect quality
-- 0.4 = Partially aligned, missing key information or some inaccuracies
-- 0.0 = Not aligned, incorrect information, or completely off-topic
+- 1.0 = Response fully aligns with expected output (correct legal content, proper citations, complete)
+- 0.7 = Mostly aligned, minor omissions or less precise citations but legally sound
+- 0.4 = Partially aligned, missing important legal points or some inaccuracies
+- 0.1 = Minimally relevant, significant errors or missing most key information
+- 0.0 = Not aligned, legally incorrect, or completely off-topic
+
+IMPORTANT: The expected output and the actual response are in Italian. You must evaluate
+the legal substance, not the exact wording. Paraphrased correct answers should score high.
 
 Customer Input: {query}
 Expected Output: {ground_truth}
 Actual Output: {generation}
 
-Return ONLY a JSON object: {{"score": <float>, "reasoning": "<brief explanation>"}}"""
+Return ONLY a JSON object: {{"score": <float>, "reasoning": "<brief explanation in English>"}}"""
 
 
 def _region() -> str:
@@ -142,9 +153,9 @@ def _run_correctness_judge(
 
 def main():
     parser = argparse.ArgumentParser(description="Run LLM-as-judge eval pipeline")
-    parser.add_argument("--dataset", default="customer-support-eval")
-    parser.add_argument("--min-score", type=float, default=0.7)
-    parser.add_argument("--timeout", type=int, default=120)
+    parser.add_argument("--dataset", default="italian-legal-eval")
+    parser.add_argument("--min-score", type=float, default=0.5)
+    parser.add_argument("--timeout", type=int, default=180)
     parser.add_argument("--run-name", default=None)
     parser.add_argument("--export", default=None, help="Export results to CSV file path")
     args = parser.parse_args()
@@ -181,12 +192,15 @@ def main():
     print("=" * 60)
 
     # 3. Run evaluation using item.run() context manager
-    results = []  # list of (query, score, reasoning)
+    results = []  # list of (query, score, reasoning, domain, tipologia)
 
     for i, item in enumerate(active_items):
         query = item.input.get("input", "") if isinstance(item.input, dict) else str(item.input)
         ground_truth = str(item.expected_output) if item.expected_output else ""
-        print(f"\n[{i + 1}/{len(active_items)}] \"{query[:60]}\"")
+        metadata = getattr(item, "metadata", {}) or {}
+        domain = metadata.get("domain", "")
+        tipologia = metadata.get("tipologia", "")
+        print(f"\n[{i + 1}/{len(active_items)}] [{domain}|{tipologia}] \"{query[:60]}\"")
 
         # Invoke agent inside item.run() so the trace is linked to the dataset
         try:
@@ -217,11 +231,11 @@ def main():
 
                 status = "PASS" if score >= args.min_score else "FAIL"
                 print(f"  [{status}] {score:.2f} — {reasoning}")
-                results.append((query, score, reasoning))
+                results.append((query, score, reasoning, domain, tipologia))
 
         except Exception as e:
             print(f"  ERROR: {e}")
-            results.append((query, 0.0, f"Runtime error: {e}"))
+            results.append((query, 0.0, f"Runtime error: {e}", domain, tipologia))
 
     # 4. Summary
     langfuse.flush()
@@ -231,10 +245,10 @@ def main():
     print("EVALUATION SUMMARY")
     print("=" * 60)
 
-    scores = [s for _, s, _ in results]
-    for query, score, reasoning in results:
+    scores = [s for _, s, _, _, _ in results]
+    for query, score, reasoning, domain, tipologia in results:
         status = "PASS" if score >= args.min_score else "FAIL"
-        print(f"  [{status}] {score:.2f} | {query[:50]}")
+        print(f"  [{status}] {score:.2f} | [{domain}|{tipologia}] {query[:50]}")
 
     avg_score = sum(scores) / len(scores) if scores else 0.0
     passing = sum(1 for s in scores if s >= args.min_score)
@@ -245,16 +259,26 @@ def main():
     print(f"Passing: {passing}/{len(scores)} (threshold: {args.min_score})")
     print(f"Langfuse run: {run_name}")
 
-    # Export to CSV if requested
+    # Per-domain breakdown
+    domain_scores = {}
+    for _, score, _, domain, _ in results:
+        domain_scores.setdefault(domain, []).append(score)
+    if domain_scores:
+        print("\nPer-domain breakdown:")
+        for domain, d_scores in sorted(domain_scores.items()):
+            d_avg = sum(d_scores) / len(d_scores)
+            print(f"  {domain}: {d_avg:.2f} ({len(d_scores)} items)")
+
+    # Export to CSV
     export_path = args.export or f"eval-results-{run_name}.csv"
     with open(export_path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["query", "score", "result", "reasoning"])
-        for query, score, reasoning in results:
+        writer.writerow(["query", "score", "result", "domain", "tipologia", "reasoning"])
+        for query, score, reasoning, domain, tipologia in results:
             status = "PASS" if score >= args.min_score else "FAIL"
-            writer.writerow([query, f"{score:.2f}", status, reasoning])
+            writer.writerow([query, f"{score:.2f}", status, domain, tipologia, reasoning])
         writer.writerow([])
-        writer.writerow(["SUMMARY", f"{avg_score:.2f}", f"{passing}/{len(scores)} passing", run_name])
+        writer.writerow(["SUMMARY", f"{avg_score:.2f}", f"{passing}/{len(scores)} passing", "", "", run_name])
     print(f"Results exported to: {export_path}")
 
     if avg_score >= args.min_score and failing == 0:

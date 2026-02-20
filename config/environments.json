@@ -14,6 +14,11 @@
       "chunkMaxTokens": 512,
       "chunkOverlapPercent": 20
     },
+    "eval": {
+      "dataset": "italian-legal-eval-quick",
+      "minScore": 0.5,
+      "timeout": 180
+    },
     "tags": {
       "Environment": "beta",
       "Project": "awslegalpoc",
@@ -35,6 +40,11 @@
       "chunkMaxTokens": 512,
       "chunkOverlapPercent": 20,
       "vectorBucketName": "878817878019-awslegalpoc-kb-vectors"
+    },
+    "eval": {
+      "dataset": "italian-legal-eval",
+      "minScore": 0.5,
+      "timeout": 180
     },
     "tags": {
       "Environment": "prod",

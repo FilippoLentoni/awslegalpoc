@@ -1,109 +1,180 @@
-"""Seed an evaluation dataset into Langfuse for prompt experiments.
+"""Seed an evaluation dataset into Langfuse from an XLSX test set.
+
+Loads questions from each sheet of the XLSX file and creates Langfuse
+dataset items with input (Domanda) and expected output (Risposta).
 
 Re-running this script upserts items (same ID = overwrite, not duplicate).
 
 Usage:
-    set -a && source .env && set +a && python3.11 scripts/seed_langfuse_dataset.py
+    # Download test set from S3
+    aws s3 cp s3://materialpoc/knowledge-base/test_set.xlsx /tmp/test_set.xlsx
+
+    # Seed dataset
+    set -a && source .env && set +a
+    python3.11 scripts/seed_langfuse_dataset.py --xlsx /tmp/test_set.xlsx
 """
 
+import argparse
 import hashlib
 import sys
 import os
+import time
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from openpyxl import load_workbook
+
 from core.langfuse_client import get_langfuse_client
 
-DATASET_NAME = "customer-support-eval"
+DATASET_NAME = "italian-legal-eval"
 
-ITEMS = [
-    {
-        "input": {"input": "Hello!"},
-        "expected_output": "The assistant should greet the user warmly and professionally, and offer to help with HR or candidate-related questions.",
-    },
-    {
-        "input": {"input": "What can you do?"},
-        "expected_output": "The assistant should describe its capabilities: searching the knowledge base for candidate CVs and providing information about candidates' experience, skills, and background.",
-    },
-    {
-        "input": {"input": "Tell me about Filippo Lentoni"},
-        "expected_output": "The assistant should search the knowledge base and provide a summary of Filippo Lentoni: Senior Applied Scientist at Amazon, based in New York, with experience in supply chain science, ML, and GenAI.",
-    },
-    {
-        "input": {"input": "What is Filippo's educational background?"},
-        "expected_output": "The assistant should search the knowledge base and report that Filippo holds an MSc in Mathematical Engineering (Statistical Learning) and a BSc in Mathematical Engineering, both from Politecnico di Milano.",
-    },
-    {
-        "input": {"input": "What programming tools and technologies has Filippo worked with?"},
-        "expected_output": "The assistant should search the knowledge base and list technologies such as AWS CDK, PyTorch, SageMaker, Bedrock Agents, Lambda, EC2, S3, Streamlit, SQL, Redshift, QuickSight, XGBoost, GluonTS, and DeepAR.",
-    },
-    {
-        "input": {"input": "Does Filippo have experience with generative AI?"},
-        "expected_output": "The assistant should search the knowledge base and confirm that Filippo has GenAI experience: deploying LLM (Claude) and agentic workflows for supply chain automation, and defining the GenAI automation roadmap at Amazon with VP-level visibility.",
-    },
-    {
-        "input": {"input": "What languages does Filippo speak?"},
-        "expected_output": "The assistant should search the knowledge base and report that Filippo speaks English (C2 level) and Italian (native).",
-    },
-    {
-        "input": {"input": "Has Filippo published any research?"},
-        "expected_output": "The assistant should search the knowledge base and mention that Filippo's research papers were accepted at the Amazon Machine Learning Conference (AMLC) and the Amazon Computer Vision Conference (ACVC) in 2024.",
-    },
-    {
-        "input": {"input": "What mentoring or community activities has Filippo been involved in?"},
-        "expected_output": "The assistant should search the knowledge base and mention Filippo's role as a mentor at LeadTheFuture, organizing Amazon Data Science Week in Italy, AWS GenAI workshops at University of Leuven, and science lead at TU Munich Data Innovation Lab.",
-    },
-    {
-        "input": {"input": "Tell me about a candidate with machine learning experience"},
-        "expected_output": "The assistant should search the knowledge base and identify Filippo Lentoni as a candidate with extensive ML experience including XGBoost forecasting, multimodal deep neural networks, anomaly detection with CLIP embeddings, and ensemble methods.",
-    },
-]
+MAX_RETRIES = 5
 
-lf = get_langfuse_client()
-if not lf:
-    print("ERROR: Langfuse client not configured.")
-    sys.exit(1)
 
-# Create dataset
-try:
-    dataset = lf.create_dataset(
-        name=DATASET_NAME,
-        description="Evaluation dataset for customer support agent prompt experiments",
-    )
-    print(f"Created dataset '{DATASET_NAME}'")
-except Exception:
-    print(f"Dataset '{DATASET_NAME}' already exists, adding items...")
+def _call_with_retry(fn, *args, **kwargs):
+    """Call a function with exponential backoff on 429 errors."""
+    for attempt in range(MAX_RETRIES):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            if "429" in str(e) and attempt < MAX_RETRIES - 1:
+                wait = 2 ** (attempt + 1)
+                print(f"    Rate limited, waiting {wait}s...")
+                time.sleep(wait)
+            else:
+                raise
 
-# Archive existing items that won't be overwritten
-try:
-    existing = lf.get_dataset(DATASET_NAME)
-    new_ids = set()
-    for item in ITEMS:
+
+def load_items_from_xlsx(xlsx_path: str) -> list:
+    """Load test items from XLSX file with multiple sheets."""
+    wb = load_workbook(xlsx_path, data_only=True)
+    items = []
+
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+
+        # Build header index from first row
+        headers = {}
+        for idx, cell in enumerate(ws[1]):
+            if cell.value:
+                headers[cell.value.strip()] = idx
+
+        domanda_col = headers.get("Domanda")
+        risposta_col = headers.get("Risposta (quella che vorremmo che il bot fornisse)")
+        tipologia_col = headers.get("Tipologia")
+        riferimenti_col = headers.get("Riferimenti")
+        n_col = headers.get("N.")
+
+        if domanda_col is None or risposta_col is None:
+            print(f"  Skipping sheet '{sheet_name}': missing required columns")
+            continue
+
+        sheet_count = 0
+        for row in ws.iter_rows(min_row=2, values_only=False):
+            cells = list(row)
+            domanda = cells[domanda_col].value
+            risposta = cells[risposta_col].value
+
+            # Skip empty rows
+            if not domanda or not str(domanda).strip():
+                continue
+            if not risposta or not str(risposta).strip():
+                continue
+
+            tipologia = cells[tipologia_col].value if tipologia_col is not None else None
+            riferimenti = cells[riferimenti_col].value if riferimenti_col is not None else None
+            n = cells[n_col].value if n_col is not None else None
+
+            items.append({
+                "input": {"input": str(domanda).strip()},
+                "expected_output": str(risposta).strip(),
+                "metadata": {
+                    "domain": sheet_name,
+                    "tipologia": str(tipologia) if tipologia else None,
+                    "riferimenti": str(riferimenti) if riferimenti else None,
+                    "question_number": int(n) if n else None,
+                },
+            })
+            sheet_count += 1
+
+        print(f"  Sheet '{sheet_name}': {sheet_count} items loaded")
+
+    return items
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Seed Langfuse eval dataset from XLSX")
+    parser.add_argument("--xlsx", required=True, help="Path to test_set.xlsx file")
+    parser.add_argument("--dataset", default=DATASET_NAME, help="Langfuse dataset name")
+    args = parser.parse_args()
+
+    if not os.path.exists(args.xlsx):
+        print(f"ERROR: File not found: {args.xlsx}")
+        sys.exit(1)
+
+    lf = get_langfuse_client()
+    if not lf:
+        print("ERROR: Langfuse client not configured.")
+        sys.exit(1)
+
+    # Load items from XLSX
+    print(f"Loading items from: {args.xlsx}")
+    items = load_items_from_xlsx(args.xlsx)
+    print(f"Total items loaded: {len(items)}")
+
+    if not items:
+        print("ERROR: No items loaded from XLSX.")
+        sys.exit(1)
+
+    # Create dataset
+    try:
+        lf.create_dataset(
+            name=args.dataset,
+            description="Italian notarial law evaluation dataset",
+        )
+        print(f"Created dataset '{args.dataset}'")
+    except Exception:
+        print(f"Dataset '{args.dataset}' already exists, updating items...")
+
+    # Archive existing items that won't be overwritten
+    try:
+        existing = lf.get_dataset(args.dataset)
+        new_ids = set()
+        for item in items:
+            item_id = hashlib.md5(item["input"]["input"].encode()).hexdigest()
+            new_ids.add(item_id)
+        for old_item in existing.items:
+            if old_item.id not in new_ids:
+                _call_with_retry(
+                    lf.create_dataset_item,
+                    dataset_name=args.dataset,
+                    id=old_item.id,
+                    input=old_item.input,
+                    status="ARCHIVED",
+                )
+                print(f"  Archived old item: {old_item.id}")
+    except Exception:
+        pass
+
+    # Add/upsert items (deterministic ID from input text)
+    for i, item in enumerate(items):
         item_id = hashlib.md5(item["input"]["input"].encode()).hexdigest()
-        new_ids.add(item_id)
-    for old_item in existing.items:
-        if old_item.id not in new_ids:
-            lf.create_dataset_item(
-                dataset_name=DATASET_NAME,
-                id=old_item.id,
-                input=old_item.input,
-                status="ARCHIVED",
-            )
-            print(f"  Archived old item: {old_item.id}")
-except Exception:
-    pass
+        _call_with_retry(
+            lf.create_dataset_item,
+            dataset_name=args.dataset,
+            id=item_id,
+            input=item["input"],
+            expected_output=item["expected_output"],
+            metadata=item["metadata"],
+        )
+        print(f"  [{i + 1}/{len(items)}] {item['input']['input'][:60]}")
+        # Rate limit: delay every 5 items to avoid 429 errors
+        if (i + 1) % 5 == 0:
+            time.sleep(3)
 
-# Add/upsert items (deterministic ID from input text)
-for i, item in enumerate(ITEMS):
-    item_id = hashlib.md5(item["input"]["input"].encode()).hexdigest()
-    lf.create_dataset_item(
-        dataset_name=DATASET_NAME,
-        id=item_id,
-        input=item["input"],
-        expected_output=item["expected_output"],
-    )
-    print(f"  Added item {i + 1}/{len(ITEMS)}: {item['input']['input'][:50]}")
+    lf.flush()
+    print(f"\nDone! {len(items)} items added to dataset '{args.dataset}'.")
 
-lf.flush()
-print(f"\nDone! {len(ITEMS)} items added to dataset '{DATASET_NAME}'.")
-print("Go to Langfuse > Datasets > customer-support-eval to view and run experiments.")
+
+if __name__ == "__main__":
+    main()
