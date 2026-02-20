@@ -42,7 +42,7 @@ from core.langfuse_client import get_langfuse_client
 
 JUDGE_PROMPT_TEMPLATE = """\
 You are an expert evaluator for an Italian notarial law AI assistant.
-You must evaluate the quality of the assistant's response by comparing it
+You must evaluate whether the assistant's response is correct by comparing it
 against the expected output (ground truth written by legal experts).
 
 Evaluation criteria:
@@ -51,21 +51,21 @@ Evaluation criteria:
 - Source citation: Does the response cite relevant normative sources or doctrinal references?
 - No hallucination: Does the response avoid inventing legal provisions or doctrinal positions?
 
-Score on a scale of 0.0 to 1.0:
-- 1.0 = Response fully aligns with expected output (correct legal content, proper citations, complete)
-- 0.7 = Mostly aligned, minor omissions or less precise citations but legally sound
-- 0.4 = Partially aligned, missing important legal points or some inaccuracies
-- 0.1 = Minimally relevant, significant errors or missing most key information
-- 0.0 = Not aligned, legally incorrect, or completely off-topic
+Score with a binary value:
+- 1 = CORRECT: Response is legally accurate, covers the key points from the expected output, \
+and does not hallucinate legal provisions. Minor wording differences or omissions of \
+non-essential details are acceptable.
+- 0 = INCORRECT: Response is legally wrong, missing critical information, contains \
+hallucinated provisions, or is off-topic.
 
 IMPORTANT: The expected output and the actual response are in Italian. You must evaluate
-the legal substance, not the exact wording. Paraphrased correct answers should score high.
+the legal substance, not the exact wording. Paraphrased correct answers should score 1.
 
 Customer Input: {query}
 Expected Output: {ground_truth}
 Actual Output: {generation}
 
-Return ONLY a JSON object: {{"score": <float>, "reasoning": "<brief explanation in English>"}}"""
+Return ONLY a JSON object: {{"score": <int>, "reasoning": "<brief explanation in English>"}}"""
 
 
 def _region() -> str:
@@ -127,20 +127,12 @@ def _run_correctness_judge(
     prompt = JUDGE_PROMPT_TEMPLATE.format(
         query=query, generation=generation, ground_truth=ground_truth
     )
-    body = json.dumps(
-        {
-            "messages": [{"role": "user", "content": [{"text": prompt}]}],
-            "inferenceConfig": {"maxTokens": 256, "temperature": 0.0},
-        }
-    )
-    response = bedrock_client.invoke_model(
+    response = bedrock_client.converse(
         modelId=model_id,
-        contentType="application/json",
-        accept="application/json",
-        body=body,
+        messages=[{"role": "user", "content": [{"text": prompt}]}],
+        inferenceConfig={"maxTokens": 512, "temperature": 0.0},
     )
-    response_body = json.loads(response["body"].read())
-    output_text = response_body["output"]["message"]["content"][0]["text"]
+    output_text = response["output"]["message"]["content"][0]["text"]
 
     # Parse JSON — handle markdown code fences
     cleaned = output_text.strip()
@@ -154,6 +146,8 @@ def _run_correctness_judge(
 def main():
     parser = argparse.ArgumentParser(description="Run LLM-as-judge eval pipeline")
     parser.add_argument("--dataset", default="italian-legal-eval")
+    parser.add_argument("--judge-model", default="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+                        help="Bedrock model ID for LLM judge")
     parser.add_argument("--min-score", type=float, default=0.5)
     parser.add_argument("--timeout", type=int, default=180)
     parser.add_argument("--run-name", default=None)
@@ -172,10 +166,11 @@ def main():
     region = _region()
     bedrock_region = BEDROCK_REGION or region
     bedrock_client = boto3.client("bedrock-runtime", region_name=bedrock_region)
-    judge_model_id = "us.amazon.nova-2-lite-v1:0"
+    judge_model_id = args.judge_model
 
     print(f"Runtime: {runtime_arn}")
     print(f"Dataset: {args.dataset}")
+    print(f"Judge model: {judge_model_id}")
     print(f"Min score: {args.min_score}")
     print()
 
@@ -229,8 +224,8 @@ def main():
                     comment=reasoning,
                 )
 
-                status = "PASS" if score >= args.min_score else "FAIL"
-                print(f"  [{status}] {score:.2f} — {reasoning}")
+                status = "CORRECT" if score >= args.min_score else "INCORRECT"
+                print(f"  [{status}] {int(score)} — {reasoning}")
                 results.append((query, score, reasoning, domain, tipologia))
 
         except Exception as e:
@@ -247,16 +242,15 @@ def main():
 
     scores = [s for _, s, _, _, _ in results]
     for query, score, reasoning, domain, tipologia in results:
-        status = "PASS" if score >= args.min_score else "FAIL"
-        print(f"  [{status}] {score:.2f} | [{domain}|{tipologia}] {query[:50]}")
+        status = "CORRECT" if score >= args.min_score else "INCORRECT"
+        print(f"  [{status}] {int(score)} | [{domain}|{tipologia}] {query[:50]}")
 
-    avg_score = sum(scores) / len(scores) if scores else 0.0
-    passing = sum(1 for s in scores if s >= args.min_score)
-    failing = len(scores) - passing
+    correct = sum(1 for s in scores if s >= args.min_score)
+    total = len(scores)
+    accuracy = correct / total if total else 0.0
 
     print()
-    print(f"Average score: {avg_score:.2f}")
-    print(f"Passing: {passing}/{len(scores)} (threshold: {args.min_score})")
+    print(f"Accuracy: {accuracy:.1%} ({correct}/{total} correct)")
     print(f"Langfuse run: {run_name}")
 
     # Per-domain breakdown
@@ -264,10 +258,11 @@ def main():
     for _, score, _, domain, _ in results:
         domain_scores.setdefault(domain, []).append(score)
     if domain_scores:
-        print("\nPer-domain breakdown:")
+        print("\nPer-domain accuracy:")
         for domain, d_scores in sorted(domain_scores.items()):
-            d_avg = sum(d_scores) / len(d_scores)
-            print(f"  {domain}: {d_avg:.2f} ({len(d_scores)} items)")
+            d_correct = sum(1 for s in d_scores if s >= args.min_score)
+            d_acc = d_correct / len(d_scores) if d_scores else 0.0
+            print(f"  {domain}: {d_acc:.1%} ({d_correct}/{len(d_scores)})")
 
     # Export to CSV
     export_path = args.export or f"eval-results-{run_name}.csv"
@@ -275,17 +270,17 @@ def main():
         writer = csv.writer(f)
         writer.writerow(["query", "score", "result", "domain", "tipologia", "reasoning"])
         for query, score, reasoning, domain, tipologia in results:
-            status = "PASS" if score >= args.min_score else "FAIL"
-            writer.writerow([query, f"{score:.2f}", status, domain, tipologia, reasoning])
+            status = "CORRECT" if score >= args.min_score else "INCORRECT"
+            writer.writerow([query, int(score), status, domain, tipologia, reasoning])
         writer.writerow([])
-        writer.writerow(["SUMMARY", f"{avg_score:.2f}", f"{passing}/{len(scores)} passing", "", "", run_name])
+        writer.writerow(["SUMMARY", f"{accuracy:.1%}", f"{correct}/{total} correct", "", "", run_name])
     print(f"Results exported to: {export_path}")
 
-    if avg_score >= args.min_score and failing == 0:
-        print("\nRESULT: PASSED")
+    if accuracy >= args.min_score:
+        print(f"\nRESULT: PASSED (accuracy {accuracy:.1%} >= {args.min_score})")
         sys.exit(0)
     else:
-        print(f"\nRESULT: FAILED ({failing} items below threshold)")
+        print(f"\nRESULT: FAILED (accuracy {accuracy:.1%} < {args.min_score})")
         sys.exit(1)
 
 

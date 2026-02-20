@@ -106,6 +106,8 @@ def main():
     parser = argparse.ArgumentParser(description="Seed Langfuse eval dataset from XLSX")
     parser.add_argument("--xlsx", required=True, help="Path to test_set.xlsx file")
     parser.add_argument("--dataset", default=DATASET_NAME, help="Langfuse dataset name")
+    parser.add_argument("--max-items", type=int, default=None,
+                        help="Limit to first N items (in sheet order)")
     args = parser.parse_args()
 
     if not os.path.exists(args.xlsx):
@@ -122,6 +124,10 @@ def main():
     items = load_items_from_xlsx(args.xlsx)
     print(f"Total items loaded: {len(items)}")
 
+    if args.max_items and args.max_items < len(items):
+        items = items[:args.max_items]
+        print(f"Truncated to first {args.max_items} items")
+
     if not items:
         print("ERROR: No items loaded from XLSX.")
         sys.exit(1)
@@ -136,15 +142,11 @@ def main():
     except Exception:
         print(f"Dataset '{args.dataset}' already exists, updating items...")
 
-    # Archive existing items that won't be overwritten
+    # Archive all existing items (replacing dataset contents)
     try:
         existing = lf.get_dataset(args.dataset)
-        new_ids = set()
-        for item in items:
-            item_id = hashlib.md5(item["input"]["input"].encode()).hexdigest()
-            new_ids.add(item_id)
         for old_item in existing.items:
-            if old_item.id not in new_ids:
+            if getattr(old_item, "status", "ACTIVE") != "ARCHIVED":
                 _call_with_retry(
                     lf.create_dataset_item,
                     dataset_name=args.dataset,
@@ -156,13 +158,11 @@ def main():
     except Exception:
         pass
 
-    # Add/upsert items (deterministic ID from input text)
+    # Add new items (auto-generated IDs)
     for i, item in enumerate(items):
-        item_id = hashlib.md5(item["input"]["input"].encode()).hexdigest()
         _call_with_retry(
             lf.create_dataset_item,
             dataset_name=args.dataset,
-            id=item_id,
             input=item["input"],
             expected_output=item["expected_output"],
             metadata=item["metadata"],

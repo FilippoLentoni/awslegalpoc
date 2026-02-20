@@ -16,6 +16,7 @@
     },
     "eval": {
       "dataset": "italian-legal-eval-quick",
+      "judgeModel": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
       "minScore": 0.5,
       "timeout": 180
     },
@@ -43,6 +44,7 @@
     },
     "eval": {
       "dataset": "italian-legal-eval",
+      "judgeModel": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
       "minScore": 0.5,
       "timeout": 180
     },

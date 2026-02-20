@@ -366,12 +366,14 @@ if [[ "${SKIP_TESTS}" == "false" ]]; then
         sleep 30
 
         EVAL_DATASET=$(python3 -c "import json; print(json.load(open('${CONFIG_FILE}'))['${ENV}'].get('eval', {}).get('dataset', 'italian-legal-eval'))")
+        EVAL_JUDGE_MODEL=$(python3 -c "import json; print(json.load(open('${CONFIG_FILE}'))['${ENV}'].get('eval', {}).get('judgeModel', 'us.anthropic.claude-sonnet-4-5-20250929-v1:0'))")
         EVAL_MIN_SCORE=$(python3 -c "import json; print(json.load(open('${CONFIG_FILE}'))['${ENV}'].get('eval', {}).get('minScore', 0.5))")
         EVAL_TIMEOUT=$(python3 -c "import json; print(json.load(open('${CONFIG_FILE}'))['${ENV}'].get('eval', {}).get('timeout', 180))")
-        log_info "Eval config: dataset=${EVAL_DATASET}, minScore=${EVAL_MIN_SCORE}, timeout=${EVAL_TIMEOUT}"
+        log_info "Eval config: dataset=${EVAL_DATASET}, judge=${EVAL_JUDGE_MODEL}, minScore=${EVAL_MIN_SCORE}, timeout=${EVAL_TIMEOUT}"
 
         if python3.11 -m poetry run python "${PROJECT_ROOT}/scripts/run_eval.py" \
             --dataset "${EVAL_DATASET}" \
+            --judge-model "${EVAL_JUDGE_MODEL}" \
             --min-score "${EVAL_MIN_SCORE}" \
             --timeout "${EVAL_TIMEOUT}"; then
             log_success "Evaluation passed!"
