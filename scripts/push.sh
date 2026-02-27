@@ -29,7 +29,15 @@ fi
 
 aws ecr get-login-password --region "${AWS_REGION}" | ${DOCKER_CMD} login --username AWS --password-stdin "${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 
+SHORT_SHA="${GIT_SHA:0:7}"
+
 ${DOCKER_CMD} tag "${REPO_NAME}:latest" "${ECR_URI}:latest"
 ${DOCKER_CMD} push "${ECR_URI}:latest"
+
+if [[ -n "${SHORT_SHA}" && "${SHORT_SHA}" != "unknown" ]]; then
+    ${DOCKER_CMD} tag "${REPO_NAME}:latest" "${ECR_URI}:${SHORT_SHA}"
+    ${DOCKER_CMD} push "${ECR_URI}:${SHORT_SHA}"
+    echo "Pushed: ${ECR_URI}:${SHORT_SHA}"
+fi
 
 echo "Pushed: ${ECR_URI}:latest"

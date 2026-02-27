@@ -1,0 +1,36 @@
+version: 0.2
+
+env:
+  variables:
+    DEPLOY_ENV: "beta"
+  secrets-manager:
+    COGNITO_PASSWORD: "${SECRETS_ARN}:cognito_password"
+    LANGFUSE_PUBLIC_KEY: "${SECRETS_ARN}:langfuse_public_key"
+    LANGFUSE_SECRET_KEY: "${SECRETS_ARN}:langfuse_secret_key"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+      nodejs: 18
+    commands:
+      - npm install -g aws-cdk
+      - pip install poetry
+      - poetry install --no-interaction --no-root
+
+  pre_build:
+    commands:
+      - echo "Generating secrets file from environment variables..."
+      - python scripts/generate_secrets_from_env.py
+      - echo "Verifying AWS credentials..."
+      - aws sts get-caller-identity
+
+  build:
+    commands:
+      - echo "Deploying to ${DEPLOY_ENV}..."
+      - chmod +x scripts/deploy-all.sh scripts/build.sh scripts/push.sh
+      - ./scripts/deploy-all.sh --env ${DEPLOY_ENV} --skip-tests
+
+  post_build:
+    commands:
+      - echo "Deployment to ${DEPLOY_ENV} complete"

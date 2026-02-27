@@ -1,0 +1,42 @@
+version: 0.2
+
+env:
+  variables:
+    DEPLOY_ENV: "beta"
+  secrets-manager:
+    LANGFUSE_PUBLIC_KEY: "${SECRETS_ARN}:langfuse_public_key"
+    LANGFUSE_SECRET_KEY: "${SECRETS_ARN}:langfuse_secret_key"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - pip install poetry
+      - poetry install --no-interaction --no-root
+
+  build:
+    commands:
+      - echo "Running evaluation tests against ${DEPLOY_ENV}..."
+      - |
+        STACK_PREFIX=$(python3 -c "import json; print(json.load(open('config/environments.json'))['${DEPLOY_ENV}']['stackPrefix'])")
+        EVAL_DATASET=$(python3 -c "import json; print(json.load(open('config/environments.json'))['${DEPLOY_ENV}'].get('eval', {}).get('dataset', 'italian-legal-eval'))")
+        EVAL_JUDGE_MODEL=$(python3 -c "import json; print(json.load(open('config/environments.json'))['${DEPLOY_ENV}'].get('eval', {}).get('judgeModel', 'us.anthropic.claude-sonnet-4-5-20250929-v1:0'))")
+        EVAL_MIN_SCORE=$(python3 -c "import json; print(json.load(open('config/environments.json'))['${DEPLOY_ENV}'].get('eval', {}).get('minScore', 0.5))")
+        EVAL_TIMEOUT=$(python3 -c "import json; print(json.load(open('config/environments.json'))['${DEPLOY_ENV}'].get('eval', {}).get('timeout', 180))")
+        REGION=$(python3 -c "import json; print(json.load(open('config/environments.json'))['${DEPLOY_ENV}']['region'])")
+        LANGFUSE_HOST=$(python3 -c "import json; print(json.load(open('config/environments.json'))['${DEPLOY_ENV}']['langfuseHost'])")
+
+        export AWS_REGION="${REGION}"
+        export AWS_DEFAULT_REGION="${REGION}"
+        export COGNITO_CONFIG_SECRET="${STACK_PREFIX}/cognito-config"
+        export LANGFUSE_HOST
+
+        echo "Waiting 30 seconds for runtime to stabilize..."
+        sleep 30
+
+        poetry run python scripts/run_eval.py \
+          --dataset "${EVAL_DATASET}" \
+          --judge-model "${EVAL_JUDGE_MODEL}" \
+          --min-score "${EVAL_MIN_SCORE}" \
+          --timeout "${EVAL_TIMEOUT}"

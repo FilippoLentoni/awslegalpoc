@@ -105,8 +105,16 @@ if [[ -z "${ENV}" ]]; then
     exit 1
 fi
 
-if [[ "${ENV}" != "beta" && "${ENV}" != "prod" ]]; then
-    echo -e "${RED}Error: --env must be 'beta' or 'prod'${NC}"
+# Validate environment exists in config file
+CONFIG_FILE="${PROJECT_ROOT}/config/environments.json"
+if [[ ! -f "${CONFIG_FILE}" ]]; then
+    echo -e "${RED}Error: Configuration file not found: ${CONFIG_FILE}${NC}"
+    exit 1
+fi
+
+VALID_ENVS=$(python3 -c "import json; print(' '.join(json.load(open('${CONFIG_FILE}')).keys()))")
+if ! echo "${VALID_ENVS}" | grep -qw "${ENV}"; then
+    echo -e "${RED}Error: --env '${ENV}' not found in environments.json. Available: ${VALID_ENVS}${NC}"
     exit 1
 fi
 
@@ -135,13 +143,7 @@ log_step() {
 }
 
 # Load configuration
-CONFIG_FILE="${PROJECT_ROOT}/config/environments.json"
 SECRETS_FILE="${PROJECT_ROOT}/config/secrets.json"
-
-if [[ ! -f "${CONFIG_FILE}" ]]; then
-    log_error "Configuration file not found: ${CONFIG_FILE}"
-    exit 1
-fi
 
 # Extract configuration using Python (more reliable than jq)
 ACCOUNT=$(python3 -c "import json; print(json.load(open('${CONFIG_FILE}'))['${ENV}']['account'])")
@@ -177,6 +179,8 @@ export AWS_DEFAULT_REGION="${REGION}"
 export CDK_DEFAULT_ACCOUNT="${ACCOUNT}"
 export CDK_DEFAULT_REGION="${REGION}"
 export DEPLOY_ENV="${ENV}"
+export STACK_PREFIX="${STACK_PREFIX}"
+export GIT_SHA=$(git -C "${PROJECT_ROOT}" rev-parse HEAD 2>/dev/null || echo "unknown")
 
 # Verify AWS credentials
 log_step "Step 0: Verifying AWS Credentials"
@@ -339,7 +343,7 @@ if [[ "${SKIP_AGENTCORE}" == "false" ]]; then
     fi
 
     log_info "Deploying AgentCore runtime, gateway, and memory..."
-    python3.11 -m poetry run python "${PROJECT_ROOT}/scripts/agentcore_deploy.py" --cognito-secret "${STACK_PREFIX}/cognito-config" --wait
+    python3.11 -m poetry run python "${PROJECT_ROOT}/scripts/agentcore_deploy.py" --cognito-secret "${STACK_PREFIX}/cognito-config" --stack-prefix "${STACK_PREFIX}" --wait
     log_success "AgentCore runtime deployed"
 else
     log_info "Skipping AgentCore deployment (--skip-agentcore)"
