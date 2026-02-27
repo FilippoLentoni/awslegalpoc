@@ -28,6 +28,24 @@ def main() -> None:
     cognito = boto3.client("cognito-idp", region_name=region)
     secrets = boto3.client("secretsmanager", region_name=region)
 
+    # Check if Cognito is already bootstrapped (idempotent)
+    try:
+        existing = secrets.get_secret_value(SecretId=secret_name)
+        existing_config = json.loads(existing["SecretString"])
+        existing_pool_id = existing_config.get("pool_id")
+        if existing_pool_id:
+            # Verify the pool still exists
+            cognito.describe_user_pool(UserPoolId=existing_pool_id)
+            print(f"Cognito already bootstrapped (pool: {existing_pool_id})")
+            print(f"Secret: {secret_name}")
+            return
+    except secrets.exceptions.ResourceNotFoundException:
+        pass  # Secret doesn't exist yet, proceed with creation
+    except cognito.exceptions.ResourceNotFoundException:
+        print("Existing pool was deleted, creating new one...")
+    except Exception:
+        pass  # Any other error, proceed with creation
+
     # Create pool
     pool = cognito.create_user_pool(
         PoolName=pool_name,

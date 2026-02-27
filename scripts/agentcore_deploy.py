@@ -13,6 +13,13 @@ from bedrock_agentcore.memory.constants import StrategyType
 from bedrock_agentcore_starter_toolkit import Runtime
 
 
+_STACK_PREFIX = ""
+
+
+def _ssm_prefix() -> str:
+    return f"/app/{_STACK_PREFIX}/agentcore"
+
+
 def _region() -> str:
     return (
         os.getenv("AWS_REGION")
@@ -50,19 +57,17 @@ def ensure_cognito_params(secret_name: str) -> Dict[str, str]:
         f"https://cognito-idp.{_region()}.amazonaws.com/{pool_id}/.well-known/openid-configuration"
     )
 
-    put_ssm_parameter("/app/customersupport/agentcore/pool_id", pool_id)
-    put_ssm_parameter("/app/customersupport/agentcore/client_id", client_id)
-    put_ssm_parameter("/app/customersupport/agentcore/client_secret", client_secret)
-    put_ssm_parameter(
-        "/app/customersupport/agentcore/cognito_discovery_url", discovery_url
-    )
+    put_ssm_parameter(f"{_ssm_prefix()}/pool_id", pool_id)
+    put_ssm_parameter(f"{_ssm_prefix()}/client_id", client_id)
+    put_ssm_parameter(f"{_ssm_prefix()}/client_secret", client_secret)
+    put_ssm_parameter(f"{_ssm_prefix()}/cognito_discovery_url", discovery_url)
 
     return {"pool_id": pool_id, "client_id": client_id, "discovery_url": discovery_url}
 
 
 def ensure_memory() -> str:
     memory_client = MemoryClient(region_name=_region())
-    memory_name = "CustomerSupportMemory"
+    memory_name = f"{_STACK_PREFIX}-memory"
     strategies = [
         {
             StrategyType.USER_PREFERENCE.value: {
@@ -81,7 +86,7 @@ def ensure_memory() -> str:
     ]
 
     try:
-        memory_id = get_ssm_parameter("/app/customersupport/agentcore/memory_id")
+        memory_id = get_ssm_parameter(f"{_ssm_prefix()}/memory_id")
         return memory_id
     except Exception:
         pass
@@ -93,13 +98,13 @@ def ensure_memory() -> str:
         event_expiry_days=90,
     )
     memory_id = memory["id"]
-    put_ssm_parameter("/app/customersupport/agentcore/memory_id", memory_id)
+    put_ssm_parameter(f"{_ssm_prefix()}/memory_id", memory_id)
     return memory_id
 
 
 def ensure_gateway(cognito_config: Dict[str, str]) -> Dict[str, str]:
     gateway_client = boto3.client("bedrock-agentcore-control", region_name=_region())
-    gateway_name = os.getenv("AGENTCORE_GATEWAY_NAME", "customersupport-gw")
+    gateway_name = os.getenv("AGENTCORE_GATEWAY_NAME", f"{_STACK_PREFIX}-gw")
 
     auth_config = {
         "customJWTAuthorizer": {
@@ -111,7 +116,7 @@ def ensure_gateway(cognito_config: Dict[str, str]) -> Dict[str, str]:
     try:
         create_response = gateway_client.create_gateway(
             name=gateway_name,
-            roleArn=get_ssm_parameter("/app/customersupport/agentcore/gateway_iam_role"),
+            roleArn=get_ssm_parameter(f"{_ssm_prefix()}/gateway_iam_role"),
             protocolType="MCP",
             authorizerType="CUSTOM_JWT",
             authorizerConfiguration=auth_config,
@@ -125,7 +130,7 @@ def ensure_gateway(cognito_config: Dict[str, str]) -> Dict[str, str]:
         }
     except Exception:
         try:
-            existing_id = get_ssm_parameter("/app/customersupport/agentcore/gateway_id")
+            existing_id = get_ssm_parameter(f"{_ssm_prefix()}/gateway_id")
             gateway_response = gateway_client.get_gateway(gatewayIdentifier=existing_id)
             gateway = {
                 "id": existing_id,
@@ -148,7 +153,7 @@ def ensure_gateway(cognito_config: Dict[str, str]) -> Dict[str, str]:
 
         # Update existing gateway auth config to match current Cognito settings
         try:
-            role_arn = get_ssm_parameter("/app/customersupport/agentcore/gateway_iam_role")
+            role_arn = get_ssm_parameter(f"{_ssm_prefix()}/gateway_iam_role")
             gateway_client.update_gateway(
                 gatewayIdentifier=gateway["id"],
                 name=gateway["name"],
@@ -161,10 +166,10 @@ def ensure_gateway(cognito_config: Dict[str, str]) -> Dict[str, str]:
         except Exception as e:
             print(f"Warning: Could not update gateway auth config: {e}")
 
-    put_ssm_parameter("/app/customersupport/agentcore/gateway_id", gateway["id"])
-    put_ssm_parameter("/app/customersupport/agentcore/gateway_name", gateway["name"])
-    put_ssm_parameter("/app/customersupport/agentcore/gateway_arn", gateway["gateway_arn"])
-    put_ssm_parameter("/app/customersupport/agentcore/gateway_url", gateway["gateway_url"])
+    put_ssm_parameter(f"{_ssm_prefix()}/gateway_id", gateway["id"])
+    put_ssm_parameter(f"{_ssm_prefix()}/gateway_name", gateway["name"])
+    put_ssm_parameter(f"{_ssm_prefix()}/gateway_arn", gateway["gateway_arn"])
+    put_ssm_parameter(f"{_ssm_prefix()}/gateway_url", gateway["gateway_url"])
 
     return gateway
 
@@ -175,7 +180,7 @@ def create_agentcore_runtime_execution_role() -> str:
     region = _region()
     account_id = boto3.client("sts").get_caller_identity()["Account"]
 
-    role_name = f"CustomerSupportAssistantBedrockAgentCoreRole-{region}"
+    role_name = f"{_STACK_PREFIX}-AgentCoreRole-{region}"
 
     trust_policy = {
         "Version": "2012-10-17",
@@ -317,7 +322,7 @@ def create_agentcore_runtime_execution_role() -> str:
 
     iam.put_role_policy(
         RoleName=role_name,
-        PolicyName=f"CustomerSupportAssistantBedrockAgentCorePolicy-{region}",
+        PolicyName=f"{_STACK_PREFIX}-AgentCorePolicy-{region}",
         PolicyDocument=json.dumps(policy_document),
     )
 
@@ -331,7 +336,7 @@ def deploy_runtime(memory_id: str, cognito_config: Dict[str, str], wait: bool) -
 
     execution_role_arn = create_agentcore_runtime_execution_role()
 
-    agent_name = os.getenv("AGENTCORE_AGENT_NAME", "awslegalpoc_customer_support")
+    agent_name = os.getenv("AGENTCORE_AGENT_NAME", f"{_STACK_PREFIX}_agent")
 
     build_dir = Path(".agentcore_build")
     if build_dir.exists():
@@ -413,7 +418,7 @@ def deploy_runtime(memory_id: str, cognito_config: Dict[str, str], wait: bool) -
     os.chdir(original_cwd)
 
     runtime_arn = launch_result.agent_arn
-    put_ssm_parameter("/app/customersupport/agentcore/runtime_arn", runtime_arn)
+    put_ssm_parameter(f"{_ssm_prefix()}/runtime_arn", runtime_arn)
 
     if wait:
         status_response = runtime.status()
@@ -432,15 +437,25 @@ def deploy_runtime(memory_id: str, cognito_config: Dict[str, str], wait: bool) -
 
 
 def main() -> None:
+    global _STACK_PREFIX
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--cognito-secret",
         default=os.getenv("COGNITO_CONFIG_SECRET", "awslegalpoc/cognito-config"),
     )
+    parser.add_argument(
+        "--stack-prefix",
+        default=os.getenv("STACK_PREFIX", "awslegalpoc"),
+        help="Stack prefix for SSM parameter namespacing and resource naming",
+    )
     parser.add_argument("--wait", action="store_true")
     args = parser.parse_args()
 
+    _STACK_PREFIX = args.stack_prefix
+
     print(f"Using region: {_region()}")
+    print(f"Using stack prefix: {_STACK_PREFIX}")
 
     cognito_config = ensure_cognito_params(args.cognito_secret)
     memory_id = ensure_memory()

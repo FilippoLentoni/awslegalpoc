@@ -15,6 +15,8 @@ class AwsLegalPocAgentCoreStack(Stack):
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
+        stack_prefix = config["stackPrefix"]
+
         # Gateway IAM role used by agentcore_deploy.py when creating the gateway
         gateway_role = iam.Role(
             self,
@@ -25,7 +27,7 @@ class AwsLegalPocAgentCoreStack(Stack):
         ssm.StringParameter(
             self,
             "GatewayAgentcoreIAMRoleParam",
-            parameter_name="/app/customersupport/agentcore/gateway_iam_role",
+            parameter_name=f"/app/{stack_prefix}/agentcore/gateway_iam_role",
             string_value=gateway_role.role_arn,
         )
 

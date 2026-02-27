@@ -1,4 +1,8 @@
 {
+  "github": {
+    "owner": "FilippoLentoni",
+    "repo": "awslegalpoc"
+  },
   "beta": {
     "account": "958502869858",
     "region": "us-east-2",
