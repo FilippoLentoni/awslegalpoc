@@ -163,7 +163,7 @@ if [[ "${DRY_RUN}" == "true" ]]; then
 fi
 
 # Confirm deployment (skip in CI/CD)
-if [[ "${ENV}" == "prod" && -z "${CI}" && -z "${CODEBUILD_BUILD_ID}" ]]; then
+if [[ "${ENV}" == "prod" && -z "${CI:-}" && -z "${CODEBUILD_BUILD_ID:-}" ]]; then
     echo ""
     log_warn "You are about to deploy to PRODUCTION (${ACCOUNT})"
     read -p "Are you sure you want to continue? (yes/no): " CONFIRM
