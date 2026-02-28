@@ -10,8 +10,8 @@
     "ecrRepository": "beta-awslegalpoc-streamlit",
     "cognitoUsername": "admin",
     "langfuseHost": "https://us.cloud.langfuse.com",
-    "bedrockModelId": "anthropic.claude-sonnet-4-5-20250929-v1:0",
-    "bedrockInferenceProfile": "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "bedrockModelId": "amazon.nova-2-lite-v1:0",
+    "bedrockInferenceProfile": "us.amazon.nova-2-lite-v1:0",
     "knowledgeBase": {
       "embeddingModel": "amazon.titan-embed-text-v2:0",
       "dimension": 1024,
@@ -19,7 +19,7 @@
       "chunkOverlapPercent": 20
     },
     "eval": {
-      "dataset": "italian-legal-eval-quick",
+      "dataset": "italian-legal-eval-ci",
       "judgeModel": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
       "minScore": 0.5,
       "timeout": 180
@@ -37,8 +37,8 @@
     "ecrRepository": "awslegalpoc-streamlit",
     "cognitoUsername": "admin",
     "langfuseHost": "https://us.cloud.langfuse.com",
-    "bedrockModelId": "anthropic.claude-sonnet-4-5-20250929-v1:0",
-    "bedrockInferenceProfile": "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "bedrockModelId": "amazon.nova-2-lite-v1:0",
+    "bedrockInferenceProfile": "us.amazon.nova-2-lite-v1:0",
     "knowledgeBase": {
       "embeddingModel": "amazon.titan-embed-text-v2:0",
       "dimension": 1024,
@@ -47,7 +47,7 @@
       "vectorBucketName": "878817878019-awslegalpoc-kb-vectors"
     },
     "eval": {
-      "dataset": "italian-legal-eval",
+      "dataset": "italian-legal-eval-ci",
       "judgeModel": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
       "minScore": 0.5,
       "timeout": 180

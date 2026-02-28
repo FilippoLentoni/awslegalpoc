@@ -66,6 +66,7 @@ class AwsLegalPocPipelineStack(Stack):
             iam.PolicyStatement(
                 actions=[
                     "cloudformation:*",
+                    "codebuild:*",
                     "ecr:*",
                     "ecs:*",
                     "ec2:*",
@@ -84,6 +85,7 @@ class AwsLegalPocPipelineStack(Stack):
                     "application-autoscaling:*",
                     "servicediscovery:*",
                     "sns:*",
+                    "sts:GetCallerIdentity",
                 ],
                 resources=["*"],
             )
