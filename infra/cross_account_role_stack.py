@@ -48,6 +48,7 @@ class AwsLegalPocCrossAccountRoleStack(Stack):
                     "elasticloadbalancingv2:*",
                     "bedrock:*",
                     "bedrock-agentcore:*",
+                    "codebuild:*",
                     "cognito-idp:*",
                     "s3vectors:*",
                     "xray:*",
