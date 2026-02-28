@@ -22,7 +22,8 @@ def _get_runtime_arn() -> str:
     if runtime_arn:
         return runtime_arn
     ssm = boto3.client("ssm", region_name=REGION)
-    return ssm.get_parameter(Name="/app/customersupport/agentcore/runtime_arn")["Parameter"]["Value"]
+    stack_prefix = os.getenv("STACK_PREFIX", "awslegalpoc")
+    return ssm.get_parameter(Name=f"/app/{stack_prefix}/agentcore/runtime_arn")["Parameter"]["Value"]
 
 
 def _secret_hash(username: str, client_id: str, client_secret: str) -> str:

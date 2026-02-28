@@ -153,6 +153,9 @@ class AwsLegalPocPipelineStack(Stack):
                 "DEPLOY_ENV": codebuild.BuildEnvironmentVariable(
                     value="beta",
                 ),
+                "STACK_PREFIX": codebuild.BuildEnvironmentVariable(
+                    value=stack_prefix,
+                ),
                 "COGNITO_PASSWORD": codebuild.BuildEnvironmentVariable(
                     value=f"{beta_secrets_arn}:cognito_password",
                     type=codebuild.BuildEnvironmentVariableType.SECRETS_MANAGER,
@@ -203,6 +206,9 @@ class AwsLegalPocPipelineStack(Stack):
                 "DEPLOY_ENV": codebuild.BuildEnvironmentVariable(
                     value="beta",
                 ),
+                "STACK_PREFIX": codebuild.BuildEnvironmentVariable(
+                    value=stack_prefix,
+                ),
                 "COGNITO_PASSWORD": codebuild.BuildEnvironmentVariable(
                     value=f"{beta_secrets_arn}:cognito_password",
                     type=codebuild.BuildEnvironmentVariableType.SECRETS_MANAGER,
@@ -221,7 +227,8 @@ class AwsLegalPocPipelineStack(Stack):
         # --- CodeBuild: Deploy Prod (cross-account) ---
         prod_deploy_project = None
         if prod_account:
-            prod_secrets_arn = f"arn:aws:secretsmanager:{prod_region}:{prod_account}:secret:{prod_config.get('stackPrefix', 'awslegalpoc')}/pipeline-secrets"
+            prod_stack_prefix = prod_config.get("stackPrefix", "awslegalpoc")
+            prod_secrets_name = f"{prod_stack_prefix}/pipeline-secrets"
 
             prod_deploy_project = codebuild.Project(
                 self,
@@ -247,11 +254,16 @@ class AwsLegalPocPipelineStack(Stack):
                         "pre_build": {
                             "commands": [
                                 # Assume cross-account role for prod
-                                f'CREDS=$(aws sts assume-role --role-arn "arn:aws:iam::{prod_account}:role/{prod_config.get("stackPrefix", "awslegalpoc")}-CrossAccountDeployRole" --role-session-name "codebuild-prod-deploy" --output json)',
+                                f'CREDS=$(aws sts assume-role --role-arn "arn:aws:iam::{prod_account}:role/{prod_stack_prefix}-CrossAccountDeployRole" --role-session-name "codebuild-prod-deploy" --output json)',
                                 'export AWS_ACCESS_KEY_ID=$(echo $CREDS | python3 -c "import sys,json; print(json.load(sys.stdin)[\'Credentials\'][\'AccessKeyId\'])")',
                                 'export AWS_SECRET_ACCESS_KEY=$(echo $CREDS | python3 -c "import sys,json; print(json.load(sys.stdin)[\'Credentials\'][\'SecretAccessKey\'])")',
                                 'export AWS_SESSION_TOKEN=$(echo $CREDS | python3 -c "import sys,json; print(json.load(sys.stdin)[\'Credentials\'][\'SessionToken\'])")',
                                 "aws sts get-caller-identity",
+                                # Fetch secrets from prod account (after assume-role)
+                                f'PROD_SECRETS=$(aws secretsmanager get-secret-value --secret-id "{prod_secrets_name}" --query SecretString --output text)',
+                                "export COGNITO_PASSWORD=$(echo $PROD_SECRETS | python3 -c \"import sys,json; print(json.load(sys.stdin)['cognito_password'])\")",
+                                "export LANGFUSE_PUBLIC_KEY=$(echo $PROD_SECRETS | python3 -c \"import sys,json; print(json.load(sys.stdin)['langfuse_public_key'])\")",
+                                "export LANGFUSE_SECRET_KEY=$(echo $PROD_SECRETS | python3 -c \"import sys,json; print(json.load(sys.stdin)['langfuse_secret_key'])\")",
                                 "python scripts/generate_secrets_from_env.py",
                             ],
                         },
@@ -268,18 +280,7 @@ class AwsLegalPocPipelineStack(Stack):
                 }),
                 environment_variables={
                     "DEPLOY_ENV": codebuild.BuildEnvironmentVariable(value="prod"),
-                    "COGNITO_PASSWORD": codebuild.BuildEnvironmentVariable(
-                        value=f"{prod_secrets_arn}:cognito_password",
-                        type=codebuild.BuildEnvironmentVariableType.SECRETS_MANAGER,
-                    ),
-                    "LANGFUSE_PUBLIC_KEY": codebuild.BuildEnvironmentVariable(
-                        value=f"{prod_secrets_arn}:langfuse_public_key",
-                        type=codebuild.BuildEnvironmentVariableType.SECRETS_MANAGER,
-                    ),
-                    "LANGFUSE_SECRET_KEY": codebuild.BuildEnvironmentVariable(
-                        value=f"{prod_secrets_arn}:langfuse_secret_key",
-                        type=codebuild.BuildEnvironmentVariableType.SECRETS_MANAGER,
-                    ),
+                    "STACK_PREFIX": codebuild.BuildEnvironmentVariable(value=prod_stack_prefix),
                 },
             )
 

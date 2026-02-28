@@ -21,7 +21,8 @@ def get_runtime_arn() -> str:
     if env:
         return env
 
-    return _get_ssm_parameter("/app/customersupport/agentcore/runtime_arn")
+    stack_prefix = os.getenv("STACK_PREFIX", "awslegalpoc")
+    return _get_ssm_parameter(f"/app/{stack_prefix}/agentcore/runtime_arn")
 
 
 def invoke_agentcore_runtime(
