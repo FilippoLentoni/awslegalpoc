@@ -162,8 +162,8 @@ if [[ "${DRY_RUN}" == "true" ]]; then
     exit 0
 fi
 
-# Confirm deployment
-if [[ "${ENV}" == "prod" ]]; then
+# Confirm deployment (skip in CI/CD)
+if [[ "${ENV}" == "prod" && -z "${CI}" && -z "${CODEBUILD_BUILD_ID}" ]]; then
     echo ""
     log_warn "You are about to deploy to PRODUCTION (${ACCOUNT})"
     read -p "Are you sure you want to continue? (yes/no): " CONFIRM
@@ -171,6 +171,9 @@ if [[ "${ENV}" == "prod" ]]; then
         log_info "Deployment cancelled"
         exit 0
     fi
+elif [[ "${ENV}" == "prod" ]]; then
+    log_warn "You are about to deploy to PRODUCTION (${ACCOUNT})"
+    log_info "CI/CD mode detected - skipping confirmation"
 fi
 
 # Export environment variables for CDK and scripts
