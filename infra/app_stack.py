@@ -144,6 +144,7 @@ class AwsLegalPocAppStack(Stack):
                 "KNOWLEDGE_BASE_ID": kb_id,
                 "KB_DATA_BUCKET_NAME": kb_data_bucket,
                 "KB_DATA_SOURCE_ID": kb_data_source_id,
+                "STACK_PREFIX": stack_prefix,
             },
             secrets={
                 "LANGFUSE_PUBLIC_KEY": ecs.Secret.from_secrets_manager(
