@@ -67,7 +67,7 @@ def ensure_cognito_params(secret_name: str) -> Dict[str, str]:
 
 def ensure_memory() -> str:
     memory_client = MemoryClient(region_name=_region())
-    memory_name = f"{_STACK_PREFIX}-memory"
+    memory_name = f"{_STACK_PREFIX}_memory".replace("-", "_")
     strategies = [
         {
             StrategyType.USER_PREFERENCE.value: {
@@ -336,7 +336,7 @@ def deploy_runtime(memory_id: str, cognito_config: Dict[str, str], wait: bool) -
 
     execution_role_arn = create_agentcore_runtime_execution_role()
 
-    agent_name = os.getenv("AGENTCORE_AGENT_NAME", f"{_STACK_PREFIX}_agent")
+    agent_name = os.getenv("AGENTCORE_AGENT_NAME", f"{_STACK_PREFIX}_agent".replace("-", "_"))
 
     build_dir = Path(".agentcore_build")
     if build_dir.exists():
