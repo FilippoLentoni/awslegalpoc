@@ -37,41 +37,43 @@ print(f"Deploying to environment: {env_name}")
 print(f"Account: {account}, Region: {region}")
 print(f"Stack prefix: {stack_prefix}")
 
-ecr_stack = AwsLegalPocEcrStack(
-    app,
-    f"{stack_prefix}-EcrStack",
-    env=cdk.Environment(account=account, region=region),
-    env_name=env_name,
-    config=config,
-)
+# Application stacks (only in beta and prod, not orchestrator)
+if env_name in ("beta", "prod"):
+    ecr_stack = AwsLegalPocEcrStack(
+        app,
+        f"{stack_prefix}-EcrStack",
+        env=cdk.Environment(account=account, region=region),
+        env_name=env_name,
+        config=config,
+    )
 
-AwsLegalPocAppStack(
-    app,
-    f"{stack_prefix}-AppStack",
-    repo=ecr_stack.repo,
-    env=cdk.Environment(account=account, region=region),
-    env_name=env_name,
-    config=config,
-)
+    AwsLegalPocAppStack(
+        app,
+        f"{stack_prefix}-AppStack",
+        repo=ecr_stack.repo,
+        env=cdk.Environment(account=account, region=region),
+        env_name=env_name,
+        config=config,
+    )
 
-AwsLegalPocAgentCoreStack(
-    app,
-    f"{stack_prefix}-AgentCoreStack",
-    env=cdk.Environment(account=account, region=region),
-    env_name=env_name,
-    config=config,
-)
+    AwsLegalPocAgentCoreStack(
+        app,
+        f"{stack_prefix}-AgentCoreStack",
+        env=cdk.Environment(account=account, region=region),
+        env_name=env_name,
+        config=config,
+    )
 
-AwsLegalPocKnowledgeBaseStack(
-    app,
-    f"{stack_prefix}-KnowledgeBaseStack",
-    env=cdk.Environment(account=account, region=region),
-    env_name=env_name,
-    config=config,
-)
+    AwsLegalPocKnowledgeBaseStack(
+        app,
+        f"{stack_prefix}-KnowledgeBaseStack",
+        env=cdk.Environment(account=account, region=region),
+        env_name=env_name,
+        config=config,
+    )
 
-# Pipeline stack (only in beta account, where CI/CD pipeline lives)
-if env_name == "beta":
+# Pipeline stack (only in orchestrator account, where CI/CD pipeline lives)
+if env_name == "orchestrator":
     AwsLegalPocPipelineStack(
         app,
         f"{stack_prefix}-PipelineStack",
@@ -80,16 +82,16 @@ if env_name == "beta":
         config=config,
     )
 
-# Cross-account role stack (only in prod account, enables beta pipeline to deploy here)
-if env_name == "prod" and "beta" in all_config:
-    beta_account = all_config["beta"]["account"]
+# Cross-account role stack (deployed in beta and prod, trusts the orchestrator account)
+if env_name in ("beta", "prod") and "orchestrator" in all_config:
+    orchestrator_account = all_config["orchestrator"]["account"]
     AwsLegalPocCrossAccountRoleStack(
         app,
         f"{stack_prefix}-CrossAccountRoleStack",
         env=cdk.Environment(account=account, region=region),
         env_name=env_name,
         config=config,
-        beta_account=beta_account,
+        trusted_account=orchestrator_account,
     )
 
 app.synth()

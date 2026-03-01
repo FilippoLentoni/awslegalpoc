@@ -3,8 +3,18 @@
     "owner": "FilippoLentoni",
     "repo": "awslegalpoc"
   },
+  "orchestrator": {
+    "account": "256455711499",
+    "region": "us-east-2",
+    "stackPrefix": "orchestrator-awslegalpoc",
+    "tags": {
+      "Environment": "orchestrator",
+      "Project": "awslegalpoc",
+      "ManagedBy": "deployment-script"
+    }
+  },
   "beta": {
-    "account": "958502869858",
+    "account": "573360955186",
     "region": "us-east-2",
     "stackPrefix": "beta-awslegalpoc",
     "ecrRepository": "beta-awslegalpoc-streamlit",
@@ -31,7 +41,7 @@
     }
   },
   "prod": {
-    "account": "878817878019",
+    "account": "042843883169",
     "region": "us-east-2",
     "stackPrefix": "awslegalpoc",
     "ecrRepository": "awslegalpoc-streamlit",
@@ -44,7 +54,7 @@
       "dimension": 1024,
       "chunkMaxTokens": 512,
       "chunkOverlapPercent": 20,
-      "vectorBucketName": "878817878019-awslegalpoc-kb-vectors"
+      "vectorBucketName": "042843883169-awslegalpoc-kb-vectors"
     },
     "eval": {
       "dataset": "italian-legal-eval-ci",

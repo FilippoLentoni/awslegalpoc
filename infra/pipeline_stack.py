@@ -26,12 +26,15 @@ class AwsLegalPocPipelineStack(Stack):
 
         stack_prefix = config["stackPrefix"]
 
-        # Load full config for prod and github settings
+        # Load full config for beta, prod and github settings
         config_path = Path(__file__).parent.parent / "config" / "environments.json"
         with open(config_path) as f:
             all_config = json.load(f)
+        beta_config = all_config.get("beta", {})
         prod_config = all_config.get("prod", {})
         github_config = all_config.get("github", {})
+        beta_account = beta_config.get("account", "")
+        beta_stack_prefix = beta_config.get("stackPrefix", "beta-awslegalpoc")
         prod_account = prod_config.get("account", "")
         prod_region = prod_config.get("region", config["region"])
 
@@ -91,14 +94,21 @@ class AwsLegalPocPipelineStack(Stack):
             )
         )
 
-        # Allow assuming cross-account role for prod deployments
+        # Allow assuming cross-account roles for beta and prod deployments
+        assume_role_resources = []
+        if beta_account:
+            assume_role_resources.append(
+                f"arn:aws:iam::{beta_account}:role/{beta_stack_prefix}-CrossAccountDeployRole"
+            )
         if prod_account:
+            assume_role_resources.append(
+                f"arn:aws:iam::{prod_account}:role/{prod_config.get('stackPrefix', 'awslegalpoc')}-CrossAccountDeployRole"
+            )
+        if assume_role_resources:
             build_role.add_to_policy(
                 iam.PolicyStatement(
                     actions=["sts:AssumeRole"],
-                    resources=[
-                        f"arn:aws:iam::{prod_account}:role/{prod_config.get('stackPrefix', 'awslegalpoc')}-CrossAccountDeployRole"
-                    ],
+                    resources=assume_role_resources,
                 )
             )
 
@@ -106,7 +116,7 @@ class AwsLegalPocPipelineStack(Stack):
         beta_secrets_arn = f"arn:aws:secretsmanager:{config['region']}:{config['account']}:secret:{stack_prefix}/pipeline-secrets"
 
         # --- CodeBuild: Deploy Beta ---
-        deploy_buildspec = {
+        beta_deploy_buildspec = {
             "version": "0.2",
             "phases": {
                 "install": {
@@ -119,21 +129,25 @@ class AwsLegalPocPipelineStack(Stack):
                 },
                 "pre_build": {
                     "commands": [
+                        # Assume cross-account role for beta
+                        f'CREDS=$(aws sts assume-role --role-arn "arn:aws:iam::{beta_account}:role/{beta_stack_prefix}-CrossAccountDeployRole" --role-session-name "codebuild-beta-deploy" --output json)',
+                        'export AWS_ACCESS_KEY_ID=$(echo $CREDS | python3 -c "import sys,json; print(json.load(sys.stdin)[\'Credentials\'][\'AccessKeyId\'])")',
+                        'export AWS_SECRET_ACCESS_KEY=$(echo $CREDS | python3 -c "import sys,json; print(json.load(sys.stdin)[\'Credentials\'][\'SecretAccessKey\'])")',
+                        'export AWS_SESSION_TOKEN=$(echo $CREDS | python3 -c "import sys,json; print(json.load(sys.stdin)[\'Credentials\'][\'SessionToken\'])")',
+                        "aws sts get-caller-identity",
                         "echo 'Generating secrets file from environment variables...'",
                         "python scripts/generate_secrets_from_env.py",
-                        "echo 'Verifying AWS credentials...'",
-                        "aws sts get-caller-identity",
                     ],
                 },
                 "build": {
                     "commands": [
-                        "echo \"Deploying to ${DEPLOY_ENV}...\"",
+                        "echo 'Deploying to beta...'",
                         "chmod +x scripts/deploy-all.sh scripts/build.sh scripts/push.sh",
-                        "./scripts/deploy-all.sh --env ${DEPLOY_ENV} --skip-tests",
+                        "./scripts/deploy-all.sh --env beta --skip-tests",
                     ],
                 },
                 "post_build": {
-                    "commands": ["echo \"Deployment to ${DEPLOY_ENV} complete\""],
+                    "commands": ["echo 'Deployment to beta complete'"],
                 },
             },
         }
@@ -148,13 +162,13 @@ class AwsLegalPocPipelineStack(Stack):
                 privileged=True,  # Required for Docker builds
                 compute_type=codebuild.ComputeType.MEDIUM,
             ),
-            build_spec=codebuild.BuildSpec.from_object(deploy_buildspec),
+            build_spec=codebuild.BuildSpec.from_object(beta_deploy_buildspec),
             environment_variables={
                 "DEPLOY_ENV": codebuild.BuildEnvironmentVariable(
                     value="beta",
                 ),
                 "STACK_PREFIX": codebuild.BuildEnvironmentVariable(
-                    value=stack_prefix,
+                    value=beta_stack_prefix,
                 ),
                 "COGNITO_PASSWORD": codebuild.BuildEnvironmentVariable(
                     value=f"{beta_secrets_arn}:cognito_password",
@@ -182,11 +196,21 @@ class AwsLegalPocPipelineStack(Stack):
                         "poetry install --no-interaction --no-root",
                     ],
                 },
+                "pre_build": {
+                    "commands": [
+                        # Assume cross-account role for beta (eval runs against beta resources)
+                        f'CREDS=$(aws sts assume-role --role-arn "arn:aws:iam::{beta_account}:role/{beta_stack_prefix}-CrossAccountDeployRole" --role-session-name "codebuild-beta-eval" --output json)',
+                        'export AWS_ACCESS_KEY_ID=$(echo $CREDS | python3 -c "import sys,json; print(json.load(sys.stdin)[\'Credentials\'][\'AccessKeyId\'])")',
+                        'export AWS_SECRET_ACCESS_KEY=$(echo $CREDS | python3 -c "import sys,json; print(json.load(sys.stdin)[\'Credentials\'][\'SecretAccessKey\'])")',
+                        'export AWS_SESSION_TOKEN=$(echo $CREDS | python3 -c "import sys,json; print(json.load(sys.stdin)[\'Credentials\'][\'SessionToken\'])")',
+                        "aws sts get-caller-identity",
+                    ],
+                },
                 "build": {
                     "commands": [
-                        "echo \"Running evaluation tests against ${DEPLOY_ENV}...\"",
+                        "echo 'Running evaluation tests against beta...'",
                         "chmod +x scripts/deploy-all.sh",
-                        "./scripts/deploy-all.sh --env ${DEPLOY_ENV} --skip-bootstrap --skip-cdk --skip-docker --skip-agentcore",
+                        "./scripts/deploy-all.sh --env beta --skip-bootstrap --skip-cdk --skip-docker --skip-agentcore",
                     ],
                 },
             },
@@ -207,7 +231,7 @@ class AwsLegalPocPipelineStack(Stack):
                     value="beta",
                 ),
                 "STACK_PREFIX": codebuild.BuildEnvironmentVariable(
-                    value=stack_prefix,
+                    value=beta_stack_prefix,
                 ),
                 "COGNITO_PASSWORD": codebuild.BuildEnvironmentVariable(
                     value=f"{beta_secrets_arn}:cognito_password",

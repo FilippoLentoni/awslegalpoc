@@ -304,7 +304,7 @@ if [[ -f "${SECRETS_FILE}" ]]; then
     export COGNITO_CONFIG_SECRET="${STACK_PREFIX}/cognito-config"
 
     cd "${PROJECT_ROOT}"
-    python3.11 -m poetry run python "${PROJECT_ROOT}/scripts/bootstrap_cognito.py"
+    poetry run python "${PROJECT_ROOT}/scripts/bootstrap_cognito.py"
     log_success "Cognito configured"
 else
     log_warn "Secrets file not found, skipping Cognito bootstrap"
@@ -346,7 +346,7 @@ if [[ "${SKIP_AGENTCORE}" == "false" ]]; then
     fi
 
     log_info "Deploying AgentCore runtime, gateway, and memory..."
-    python3.11 -m poetry run python "${PROJECT_ROOT}/scripts/agentcore_deploy.py" --cognito-secret "${STACK_PREFIX}/cognito-config" --stack-prefix "${STACK_PREFIX}" --wait
+    poetry run python "${PROJECT_ROOT}/scripts/agentcore_deploy.py" --cognito-secret "${STACK_PREFIX}/cognito-config" --stack-prefix "${STACK_PREFIX}" --wait
     log_success "AgentCore runtime deployed"
 else
     log_info "Skipping AgentCore deployment (--skip-agentcore)"
@@ -378,7 +378,7 @@ if [[ "${SKIP_TESTS}" == "false" ]]; then
         EVAL_TIMEOUT=$(python3 -c "import json; print(json.load(open('${CONFIG_FILE}'))['${ENV}'].get('eval', {}).get('timeout', 180))")
         log_info "Eval config: dataset=${EVAL_DATASET}, judge=${EVAL_JUDGE_MODEL}, minScore=${EVAL_MIN_SCORE}, timeout=${EVAL_TIMEOUT}"
 
-        if python3.11 -m poetry run python "${PROJECT_ROOT}/scripts/run_eval.py" \
+        if poetry run python "${PROJECT_ROOT}/scripts/run_eval.py" \
             --dataset "${EVAL_DATASET}" \
             --judge-model "${EVAL_JUDGE_MODEL}" \
             --min-score "${EVAL_MIN_SCORE}" \

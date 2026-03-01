@@ -1,7 +1,9 @@
-"""Lightweight stack deployed in the prod account to allow cross-account deployment.
+"""Lightweight stack deployed in beta and prod accounts to allow cross-account deployment.
 
-The CodeBuild role in the beta account assumes this role to deploy to prod.
-Deploy once: cdk deploy {stackPrefix}-CrossAccountRoleStack --context env=prod
+The CodeBuild role in the orchestrator account assumes this role to deploy to each target.
+Deploy once per target account:
+  cdk deploy {stackPrefix}-CrossAccountRoleStack --context env=beta
+  cdk deploy {stackPrefix}-CrossAccountRoleStack --context env=prod
 """
 
 from aws_cdk import Duration, Stack, Tags
@@ -16,20 +18,20 @@ class AwsLegalPocCrossAccountRoleStack(Stack):
         construct_id: str,
         env_name: str,
         config: dict,
-        beta_account: str,
+        trusted_account: str,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
         stack_prefix = config["stackPrefix"]
 
-        # Role that CodeBuild in the beta account can assume
+        # Role that CodeBuild in the orchestrator account can assume
         deploy_role = iam.Role(
             self,
             "CrossAccountDeployRole",
             role_name=f"{stack_prefix}-CrossAccountDeployRole",
-            assumed_by=iam.AccountPrincipal(beta_account),
-            max_session_duration=Duration.hours(1),
+            assumed_by=iam.AccountPrincipal(trusted_account),
+            max_session_duration=Duration.hours(2),
         )
 
         # Broad deployment permissions (CDK, ECS, ECR, Bedrock, etc.)
