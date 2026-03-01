@@ -30,11 +30,11 @@ class AwsLegalPocKnowledgeBaseStack(Stack):
             "vectorBucketName", f"{stack_prefix}-kb-vectors"
         )
 
-        # 1. S3 data bucket for uploading documents
+        # 1. S3 data bucket for uploading documents (account-scoped name for global uniqueness)
         data_bucket = s3.Bucket(
             self,
             "KBDataBucket",
-            bucket_name=f"{stack_prefix}-kb-data",
+            bucket_name=f"{self.account}-{stack_prefix}-kb-data",
             removal_policy=RemovalPolicy.RETAIN,
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
             versioned=True,
