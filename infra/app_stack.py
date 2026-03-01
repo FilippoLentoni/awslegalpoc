@@ -94,13 +94,13 @@ class AwsLegalPocAppStack(Stack):
         task_role.add_to_policy(
             iam.PolicyStatement(
                 actions=["s3:ListBucket"],
-                resources=[f"arn:aws:s3:::{stack_prefix}-kb-data"],
+                resources=[f"arn:aws:s3:::{self.account}-{stack_prefix}-kb-data"],
             )
         )
         task_role.add_to_policy(
             iam.PolicyStatement(
                 actions=["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
-                resources=[f"arn:aws:s3:::{stack_prefix}-kb-data/*"],
+                resources=[f"arn:aws:s3:::{self.account}-{stack_prefix}-kb-data/*"],
             )
         )
 
