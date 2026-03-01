@@ -26,3 +26,6 @@ config/secrets.json
 
 # Eval results
 eval-results-*.csv
+
+# Knowledge base documents (uploaded directly to S3, not committed to git)
+knowledge-base/
