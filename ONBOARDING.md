@@ -376,7 +376,83 @@ This creates a dataset named `italian-legal-eval-ci` in your Langfuse project wi
 
 ---
 
-## Step 9: Deploy the Pipeline Stack to Orchestrator
+## Step 9: Upload Documents to the Knowledge Base
+
+The chatbot uses Bedrock Knowledge Base for RAG (document retrieval). You must upload your
+documents **after** the CDK stacks are deployed (Steps 5–6) and **before** using the chatbot.
+
+### 9a. Create a local folder and add your documents
+
+Place your documents in a local folder on the EC2 (e.g. `knowledge-base/`).
+This folder is gitignored — documents are never committed to the repository.
+
+```bash
+mkdir knowledge-base
+# copy your PDF, DOCX, TXT files into it
+```
+
+Supported formats: **PDF, DOCX, TXT, HTML, CSV, MD**.
+
+### 9b. Upload to both S3 buckets
+
+The bucket name follows the pattern `{accountId}-{stackPrefix}-kb-data`.
+
+```bash
+# Upload to beta (replace with your beta account ID and stack prefix)
+AWS_PROFILE=beta aws s3 sync knowledge-base/ \
+  s3://YOUR_BETA_ACCOUNT_ID-beta-awslegalpoc-kb-data/ \
+  --region us-east-2 \
+  --exclude "~*"
+
+# Upload to prod (replace with your prod account ID and stack prefix)
+AWS_PROFILE=prod aws s3 sync knowledge-base/ \
+  s3://YOUR_PROD_ACCOUNT_ID-awslegalpoc-kb-data/ \
+  --region us-east-2 \
+  --exclude "~*"
+```
+
+> The `--exclude "~*"` flag skips Word/Excel temporary lock files (e.g. `~$document.docx`).
+
+### 9c. Trigger ingestion in both accounts
+
+After uploading, Bedrock must index the documents into the vector store.
+Get the KB and data source IDs from SSM, then start the ingestion job:
+
+```bash
+# Beta ingestion
+AWS_PROFILE=beta bash -c '
+  KB_ID=$(aws ssm get-parameter --name "/app/beta-awslegalpoc/kb/knowledge-base-id" --region us-east-2 --query "Parameter.Value" --output text)
+  DS_ID=$(aws ssm get-parameter --name "/app/beta-awslegalpoc/kb/data-source-id" --region us-east-2 --query "Parameter.Value" --output text)
+  aws bedrock-agent start-ingestion-job --knowledge-base-id "$KB_ID" --data-source-id "$DS_ID" --region us-east-2
+'
+
+# Prod ingestion
+AWS_PROFILE=prod bash -c '
+  KB_ID=$(aws ssm get-parameter --name "/app/awslegalpoc/kb/knowledge-base-id" --region us-east-2 --query "Parameter.Value" --output text)
+  DS_ID=$(aws ssm get-parameter --name "/app/awslegalpoc/kb/data-source-id" --region us-east-2 --query "Parameter.Value" --output text)
+  aws bedrock-agent start-ingestion-job --knowledge-base-id "$KB_ID" --data-source-id "$DS_ID" --region us-east-2
+'
+```
+
+Alternatively, trigger ingestion from the **AWS Console**:
+**Bedrock → Knowledge Bases → {stackPrefix}-kb → Data sources → Sync**
+
+**Duration:** 5–10 minutes depending on document volume. The chatbot will return results
+as soon as ingestion completes. You can monitor progress in the console or with:
+
+```bash
+AWS_PROFILE=beta aws bedrock-agent list-ingestion-jobs \
+  --knowledge-base-id YOUR_KB_ID \
+  --region us-east-2 \
+  --query "ingestionJobSummaries[0].{status:status,docs:statistics}"
+```
+
+> **Tip:** Every time you add or update documents in S3, re-run the ingestion job.
+> The sync is incremental — only changed files are re-indexed.
+
+---
+
+## Step 10: Deploy the Pipeline Stack to Orchestrator
 
 ```bash
 cd infra
@@ -394,7 +470,7 @@ This creates:
 
 ---
 
-## Step 10: Approve the GitHub Connection
+## Step 11: Approve the GitHub Connection
 
 After deploying the pipeline stack, the GitHub connection is in `PENDING` status.
 You must manually approve it:
@@ -411,7 +487,7 @@ You must manually approve it:
 
 ---
 
-## Step 11: Verify the Pipeline
+## Step 12: Verify the Pipeline
 
 Push any change to `main` (or click **Release change** in the console) to trigger the pipeline.
 
@@ -427,7 +503,7 @@ To approve: go to **CodePipeline → orchestrator-awslegalpoc-pipeline → Appro
 
 ---
 
-## Step 12: Access the Applications
+## Step 13: Access the Applications
 
 After the pipeline completes (or after your manual deploy in Steps 5–6):
 
